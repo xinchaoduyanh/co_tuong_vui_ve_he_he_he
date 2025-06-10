@@ -43,7 +43,7 @@ export default function GameBoard() {
   const {
     players,
     pieces,
-    currentTurn,
+    turn,
     isLoading,
     makeMove,
     matchId,
@@ -51,11 +51,11 @@ export default function GameBoard() {
     player2,
     initialBoardState,
     setPieces,
+    setTurn,
   } = useGameState();
   const { stompClient, isConnected } = useWebSocket();
   const { user } = useAuth();
   const [boardState, setBoardState] = useState<string>(initialBoardState);
-  const [nextTurn, setNextTurn] = useState<"r" | "b">(currentTurn);
   const [isCheck, setIsCheck] = useState(false);
   const [isCheckmate, setIsCheckmate] = useState(false);
   const [moveDescription, setMoveDescription] = useState<string>("");
@@ -82,20 +82,14 @@ export default function GameBoard() {
     handleSelectPiece,
     handleMoveTo,
     resetSelection,
-  } = useBoardLogic(pieces, nextTurn);
+  } = useBoardLogic(pieces, turn);
 
   // Log để debug
   useEffect(() => {
     console.log("Current pieces state:", pieces);
-    console.log("Current turn:", currentTurn);
-    console.log("Next turn:", nextTurn);
+    console.log("Turn:", turn);
     console.log("My color:", myColor);
-  }, [pieces, currentTurn, nextTurn, myColor]);
-
-  // Cập nhật nextTurn khi currentTurn thay đổi
-  useEffect(() => {
-    setNextTurn(currentTurn);
-  }, [currentTurn]);
+  }, [pieces, turn, myColor]);
 
   // Lắng nghe move mới từ BE
   useEffect(() => {
@@ -104,7 +98,7 @@ export default function GameBoard() {
     const handleMove = (data: any) => {
       console.log("Received move data:", data);
       setBoardState(data.boardState);
-      setNextTurn(data.nextTurn);
+      setTurn(data.nextTurn);
       setMoveDescription(data.moveDescription);
       setIsCheck(data.isCheck);
       setIsCheckmate(data.isCheckmate);
@@ -205,13 +199,13 @@ export default function GameBoard() {
       player2 &&
       myColor &&
       user &&
-      currentTurn &&
+      turn &&
       !hasShownWelcome
     ) {
       const opponent = user.id === player1.id ? player2 : player1;
       const isMyTurn =
-        (myColor === "red" && currentTurn === "r") ||
-        (myColor === "black" && currentTurn === "b");
+        (myColor === "red" && turn === "r") ||
+        (myColor === "black" && turn === "b");
 
       showNotification({
         severity: "info",
@@ -231,7 +225,7 @@ export default function GameBoard() {
     player2,
     myColor,
     user,
-    currentTurn,
+    turn,
     hasShownWelcome,
     showNotification,
   ]);
@@ -294,7 +288,7 @@ export default function GameBoard() {
     // 2. Serialize lại thành boardState string
     const newBoardState = serializePiecesToBoardState(newPieces);
     // 3. Gửi move lên BE với đầy đủ thông tin
-    if (matchId && stompClient && myColor === nextTurn) {
+    if (matchId && stompClient && myColor === turn) {
       makeMove(
         {
           fromX: selectedPiece.x,
@@ -367,20 +361,17 @@ export default function GameBoard() {
             <Flag className="h-4 w-4 mr-1" />
             Đầu hàng
           </Button>
-        </div>
-
-        {/* Turn indicator */}
-        <div className="w-full max-w-5xl text-center text-lg font-semibold mb-4">
-          {myColor &&
-          currentTurn &&
-          ((myColor === "red" && currentTurn === "r") ||
-            (myColor === "black" && currentTurn === "b"))
-            ? "Lượt của bạn !"
-            : "Chờ đối thủ"}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-blue-500 border-blue-500 bg-white/80 hover:bg-white shadow-sm ml-2"
+          >
+            Cầu hòa
+          </Button>
         </div>
 
         {/* Player info (top) */}
-        <div className="w-full max-w-5xl bg-white rounded-lg shadow-md p-4 mb-4 flex items-center">
+        <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mb-4 flex items-center">
           {/* Player1 (Red player) details */}
           <Avatar className="h-10 w-10 border-2 border-red-400 shadow-sm">
             <AvatarImage src="/placeholder.svg" alt={player1?.username} />
@@ -410,7 +401,7 @@ export default function GameBoard() {
               className="absolute inset-0 w-full h-full"
               style={{ background: "#f0d9b5" }}
               onClick={(e) => {
-                if (!selectedPiece || nextTurn !== myColor) return;
+                if (!selectedPiece || turn !== myColor) return;
 
                 const coords = getBoardCoordsFromSVGEvent(e);
                 if (!coords) return;
@@ -505,27 +496,22 @@ export default function GameBoard() {
                 strokeWidth="0.05"
               />
 
-              {/* River text - Đặt sau các đường kẻ */}
-              <text
-                x="3"
-                y="4.6"
-                fontSize="0.4"
-                fill="#8B4513"
-                textAnchor="middle"
-                pointerEvents="none"
-              >
-                楚河
-              </text>
-              <text
-                x="5"
-                y="4.6"
-                fontSize="0.4"
-                fill="#8B4513"
-                textAnchor="middle"
-                pointerEvents="none"
-              >
-                漢界
-              </text>
+              {/* River text - Replaced with Turn indicator */}
+              {myColor && turn && (
+                <text
+                  x="4"
+                  y="4.6"
+                  fontSize="0.4"
+                  fill="green"
+                  textAnchor="middle"
+                  pointerEvents="none"
+                >
+                  {(myColor === "r" && turn === "r") ||
+                  (myColor === "b" && turn === "b")
+                    ? "Lượt của bạn !"
+                    : "Chờ đối thủ"}
+                </text>
+              )}
 
               {/* Position markers */}
               {[
@@ -597,18 +583,17 @@ export default function GameBoard() {
                 ))}
 
               {/* Valid moves indicators */}
-              {nextTurn === myColor &&
+              {turn === myColor &&
                 validMoves
                   .filter((move) => move.x <= 8)
-                  .map((move) => (
+                  .map((move, moveIndex) => (
                     <circle
-                      key={`valid-${move.x}-${move.y}`}
+                      key={moveIndex}
                       cx={move.x}
                       cy={move.y}
-                      r="0.15"
-                      fill="rgba(76, 175, 80, 0.5)"
-                      stroke="#4CAF50"
-                      strokeWidth="0.02"
+                      r="0.3"
+                      fill="green"
+                      opacity="0.6"
                       onClick={() => handlePlayerMove(move.x, move.y)}
                     />
                   ))}
@@ -642,11 +627,11 @@ export default function GameBoard() {
                         key={`piece-${piece.type}-${piece.color}-${piece.x}-${piece.y}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (nextTurn === myColor && piece.color === myColor) {
+                          if (turn === myColor && piece.color === myColor) {
                             handleSelectPiece(piece);
                           } else if (
                             selectedPiece &&
-                            nextTurn === myColor &&
+                            turn === myColor &&
                             piece.color !== myColor &&
                             validMoves.some(
                               (m) => m.x === piece.x && m.y === piece.y
@@ -658,9 +643,9 @@ export default function GameBoard() {
                         }}
                         style={{
                           cursor:
-                            (piece.color === myColor && nextTurn === myColor) ||
+                            (piece.color === myColor && turn === myColor) ||
                             (selectedPiece &&
-                              nextTurn === myColor &&
+                              turn === myColor &&
                               piece.color !== myColor &&
                               validMoves.some(
                                 (m) => m.x === piece.x && m.y === piece.y
@@ -704,7 +689,7 @@ export default function GameBoard() {
                               ]}
                         </text>
                         {/* Current turn indicator */}
-                        {currentTurn === piece.color && (
+                        {turn === piece.color && (
                           <circle
                             cx={piece.x}
                             cy={piece.y}
@@ -746,57 +731,27 @@ export default function GameBoard() {
             </svg>
           </div>
         </div>
+      </div>
 
-        {/* Player info (bottom) */}
-        <div className="w-full max-w-5xl bg-white rounded-lg shadow-md p-4 mt-4 flex items-center">
-          {/* Player2 (Black player) details */}
-          <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
-            <AvatarImage src="/placeholder.svg" alt={player2?.username} />
-            <AvatarFallback>
-              {player2?.username?.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col items-center">
-            <p className="font-medium">
-              {player2?.username} {user?.id === player2?.id && "(Bạn)"}
-            </p>
-            <span>ELO: {player2?.elo}</span>
-          </div>
-          <span className="ml-auto text-sm font-mono">
-            <Clock className="inline-block w-4 h-4 mr-1" />
-            {players.black.timeLeft}
-          </span>
+      {/* Player info (bottom) */}
+      <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mt-4 flex items-center">
+        {/* Player2 (Black player) details */}
+        <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
+          <AvatarImage src="/placeholder.svg" alt={player2?.username} />
+          <AvatarFallback>
+            {player2?.username?.substring(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex flex-col items-center">
+          <p className="font-medium">
+            {player2?.username} {user?.id === player2?.id && "(Bạn)"}
+          </p>
+          <span>ELO: {player2?.elo}</span>
         </div>
-
-        {/* Game controls */}
-        <div className="flex justify-center gap-3 mt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/80 hover:bg-white shadow-sm border-amber-300"
-          >
-            Đề xuất hòa
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/80 hover:bg-white shadow-sm border-amber-300"
-          >
-            Xin đi lại
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="bg-white/80 hover:bg-white shadow-sm border-amber-300"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-          >
-            {soundEnabled ? (
-              <Volume2 className="h-4 w-4" />
-            ) : (
-              <VolumeX className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        <span className="ml-auto text-sm font-mono">
+          <Clock className="inline-block w-4 h-4 mr-1" />
+          {players.black.timeLeft}
+        </span>
       </div>
     </div>
   );

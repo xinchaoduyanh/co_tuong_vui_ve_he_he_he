@@ -80,7 +80,7 @@ export function useGameState() {
   const { stompClient, isConnected } = useWebSocket();
   const [players, setPlayers] = useState<any>({ red: {}, black: {} });
   const [pieces, setPieces] = useState<any[]>([]);
-  const [currentTurn, setCurrentTurn] = useState<"r" | "b">("r");
+  const [turn, setTurn] = useState<"r" | "b">("r");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
@@ -98,7 +98,6 @@ export function useGameState() {
     const matchId = localStorage.getItem("matchId");
     const player1Str = localStorage.getItem("player1");
     const player2Str = localStorage.getItem("player2");
-    const currentTurn = localStorage.getItem("currentTurn");
     const initialBoardState = localStorage.getItem("initialBoardState") || "";
     let p1 = null,
       p2 = null;
@@ -127,7 +126,6 @@ export function useGameState() {
     } else {
       setPieces([]);
     }
-    setCurrentTurn(currentTurn as any);
     setIsLoading(false);
   }, []);
 
@@ -160,7 +158,7 @@ export function useGameState() {
   return {
     players,
     pieces,
-    currentTurn,
+    turn,
     isLoading,
     error,
     makeMove,
@@ -169,5 +167,6 @@ export function useGameState() {
     player2,
     initialBoardState,
     setPieces,
+    setTurn,
   };
 }
