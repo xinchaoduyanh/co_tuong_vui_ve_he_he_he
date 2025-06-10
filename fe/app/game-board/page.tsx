@@ -67,6 +67,12 @@ export default function GameBoard() {
 
   // New state to track if welcome message has been shown
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
+  // State for surrender confirmation dialog
+  const [showSurrenderDialog, setShowSurrenderDialog] = useState(false);
+  // Add new states for draw request
+  const [showDrawRequestDialog, setShowDrawRequestDialog] = useState(false);
+  const [showDrawResponseDialog, setShowDrawResponseDialog] = useState(false);
+  const [drawRequestFrom, setDrawRequestFrom] = useState<string | null>(null);
 
   // Xác định màu cờ của mình
   const myColor =
@@ -90,6 +96,16 @@ export default function GameBoard() {
     console.log("Turn:", turn);
     console.log("My color:", myColor);
   }, [pieces, turn, myColor]);
+
+  // Add debug logging for WebSocket status
+  useEffect(() => {
+    console.log("[FE-Game] WebSocket Status:", {
+      stompClient: !!stompClient,
+      isConnected,
+      matchId,
+      userId: user?.id,
+    });
+  }, [stompClient, isConnected, matchId, user]);
 
   // Lắng nghe move mới từ BE
   useEffect(() => {
@@ -329,6 +345,242 @@ export default function GameBoard() {
     return { x: boardX, y: boardY };
   }
 
+  const handleSurrender = () => {
+    setShowSurrenderDialog(true);
+  };
+
+  const handleConfirmSurrender = () => {
+    if (stompClient && isConnected && matchId && user?.id) {
+      const surrenderRequest = {
+        matchId: matchId,
+        playerId: user.id,
+      };
+      stompClient.publish({
+        destination: "/app/game.surrender",
+        body: JSON.stringify(surrenderRequest),
+      });
+      showNotification({
+        severity: "info",
+        summary: "Yêu cầu đầu hàng đã được gửi",
+        detail: "Hãy chờ hệ thống xử lý",
+        life: 3000,
+      });
+    }
+    setShowSurrenderDialog(false);
+  };
+
+  const handleCancelSurrender = () => {
+    setShowSurrenderDialog(false);
+  };
+
+  // Add draw request handlers
+  const handleDrawRequest = () => {
+    console.log("[FE-Game] ====== Draw Request Button Clicked ======");
+    console.log("[FE-Game] Current state:", {
+      stompClient: !!stompClient,
+      isConnected,
+      matchId,
+      userId: user?.id,
+      player1Id: player1?.id,
+      player2Id: player2?.id,
+    });
+
+    if (!stompClient || !isConnected) {
+      console.log("[FE-Game] WebSocket not connected");
+      showNotification({
+        severity: "error",
+        summary: "Lỗi kết nối",
+        detail: "Không thể kết nối đến máy chủ",
+        life: 3000,
+      });
+      return;
+    }
+    setShowDrawRequestDialog(true);
+  };
+
+  const handleConfirmDrawRequest = () => {
+    console.log("[FE-Game] ====== Confirming Draw Request ======");
+    console.log("[FE-Game] Current state:", {
+      stompClient: !!stompClient,
+      isConnected,
+      matchId,
+      userId: user?.id,
+    });
+
+    if (stompClient && isConnected && matchId && user?.id) {
+      const drawRequest = {
+        matchId: matchId,
+        playerId: user.id,
+      };
+      console.log("[FE-Game] Sending draw offer:", drawRequest);
+      try {
+        stompClient.publish({
+          destination: "/app/game.drawOffer",
+          body: JSON.stringify(drawRequest),
+        });
+        showNotification({
+          severity: "info",
+          summary: "Yêu cầu cầu hòa",
+          detail: "Đã gửi yêu cầu cầu hòa đến đối thủ.",
+          life: 3000,
+        });
+      } catch (error) {
+        console.error("[FE-Game] Error sending draw offer:", error);
+        showNotification({
+          severity: "error",
+          summary: "Lỗi",
+          detail: "Không thể gửi yêu cầu cầu hòa",
+          life: 3000,
+        });
+      }
+    } else {
+      console.log("[FE-Game] Cannot send draw offer:", {
+        stompClient: !!stompClient,
+        isConnected,
+        matchId,
+        userId: user?.id,
+      });
+    }
+    setShowDrawRequestDialog(false);
+  };
+
+  const handleCancelDrawRequest = () => {
+    setShowDrawRequestDialog(false);
+  };
+
+  // Add WebSocket subscription for draw requests
+  useEffect(() => {
+    console.log("[FE-Game] ====== Setting up WebSocket subscriptions ======");
+    console.log("[FE-Game] Current WebSocket state:", {
+      stompClient: !!stompClient,
+      isConnected,
+      matchId,
+      userId: user?.id,
+      player1Id: player1?.id,
+      player2Id: player2?.id,
+    });
+
+    if (!stompClient || !isConnected || !matchId) {
+      console.log(
+        "[FE-Game] Cannot setup draw subscriptions - Missing required data:",
+        {
+          stompClient: !!stompClient,
+          isConnected,
+          matchId,
+        }
+      );
+      return;
+    }
+
+    console.log("[FE-Game] Setting up draw subscriptions for match:", matchId);
+    console.log(
+      "[FE-Game] Subscribing to topic:",
+      `/topic/match.${matchId}.drawOffer`
+    );
+
+    try {
+      // Subscribe to draw offer requests
+      const drawRequestSub = stompClient.subscribe(
+        `/topic/match.${matchId}.drawOffer`, // Changed from /queue to /topic
+        (msg) => {
+          console.log("[FE-Game] ====== Draw Offer Message Received ======");
+          console.log("[FE-Game] Message headers:", msg.headers);
+          console.log("[FE-Game] Message body:", msg.body);
+          console.log("[FE-Game] Current user:", user?.id);
+          console.log("[FE-Game] Current matchId:", matchId);
+          console.log("[FE-Game] ======================================");
+
+          const data = JSON.parse(msg.body);
+          console.log("[FE-Game] Parsed draw offer data:", data);
+
+          if (data.type === "DRAW_OFFER" && data.from !== user?.id) {
+            console.log("[FE-Game] Processing draw offer from:", data.from);
+            setDrawRequestFrom(data.from);
+            setShowDrawResponseDialog(true);
+            showNotification({
+              severity: "info",
+              summary: "Yêu cầu cầu hòa",
+              detail: "Đối thủ muốn cầu hòa với bạn",
+              life: 5000,
+            });
+          } else {
+            console.log("[FE-Game] Ignoring draw offer:", {
+              type: data.type,
+              from: data.from,
+              userId: user?.id,
+              isFromSelf: data.from === user?.id,
+            });
+          }
+        }
+      );
+
+      console.log("[FE-Game] Draw offer subscription setup complete");
+
+      // Subscribe to draw responses
+      const drawResponseSub = stompClient.subscribe(
+        `/topic/match.${matchId}.drawResponse`, // Changed from /queue to /topic
+        (msg) => {
+          console.log("[FE-Game] Received draw response:", msg.body);
+          const data = JSON.parse(msg.body);
+          if (data.type === "DRAW_REJECTED" && data.from !== user?.id) {
+            showNotification({
+              severity: "info",
+              summary: "Cầu hòa bị từ chối",
+              detail: "Đối thủ đã từ chối yêu cầu cầu hòa của bạn.",
+              life: 3000,
+            });
+          }
+        }
+      );
+
+      console.log("[FE-Game] Draw response subscription setup complete");
+      console.log(
+        "[FE-Game] ====== WebSocket subscriptions setup complete ======"
+      );
+
+      return () => {
+        console.log("[FE-Game] Cleaning up draw subscriptions");
+        drawRequestSub.unsubscribe();
+        drawResponseSub.unsubscribe();
+      };
+    } catch (error) {
+      console.error("[FE-Game] Error setting up draw subscriptions:", error);
+    }
+  }, [
+    stompClient,
+    isConnected,
+    matchId,
+    user,
+    showNotification,
+    player1,
+    player2,
+  ]);
+
+  const handleDrawResponse = (accepted: boolean) => {
+    if (stompClient && isConnected && matchId && user?.id) {
+      const drawResponse = {
+        matchId: matchId,
+        playerId: user.id,
+        accepted: accepted,
+      };
+      console.log("Sending draw response:", drawResponse);
+      stompClient.publish({
+        destination: "/app/game.drawResponse",
+        body: JSON.stringify(drawResponse),
+      });
+      showNotification({
+        severity: accepted ? "success" : "info",
+        summary: "Phản hồi cầu hòa",
+        detail: accepted
+          ? "Bạn đã chấp nhận cầu hòa"
+          : "Bạn đã từ chối cầu hòa",
+        life: 3000,
+      });
+    }
+    setShowDrawResponseDialog(false);
+    setDrawRequestFrom(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100">
@@ -357,6 +609,7 @@ export default function GameBoard() {
             variant="outline"
             size="sm"
             className="text-red-500 border-red-500 bg-white/80 hover:bg-white shadow-sm"
+            onClick={handleSurrender}
           >
             <Flag className="h-4 w-4 mr-1" />
             Đầu hàng
@@ -365,6 +618,8 @@ export default function GameBoard() {
             variant="outline"
             size="sm"
             className="text-blue-500 border-blue-500 bg-white/80 hover:bg-white shadow-sm ml-2"
+            onClick={handleDrawRequest}
+            disabled={!isConnected || !stompClient}
           >
             Cầu hòa
           </Button>
@@ -753,6 +1008,74 @@ export default function GameBoard() {
           {players.black.timeLeft}
         </span>
       </div>
+
+      {/* Surrender Confirmation Dialog */}
+      {showSurrenderDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
+            <h2 className="text-xl font-bold mb-4">Đầu hàng</h2>
+            <p className="mb-6">Bạn có chắc chắn muốn đầu hàng?</p>
+            <div className="flex justify-center gap-4">
+              <Button
+                onClick={handleConfirmSurrender}
+                className="bg-red-500 hover:bg-red-600 text-white"
+              >
+                Đồng ý
+              </Button>
+              <Button onClick={handleCancelSurrender} variant="outline">
+                Hủy
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draw Request Dialog */}
+      {showDrawRequestDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
+            <h2 className="text-xl font-bold mb-4">Cầu hòa</h2>
+            <p className="mb-6">Bạn có chắc chắn muốn gửi yêu cầu cầu hòa?</p>
+            <div className="flex justify-center gap-4">
+              <Button
+                onClick={handleConfirmDrawRequest}
+                className="bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Gửi yêu cầu
+              </Button>
+              <Button onClick={handleCancelDrawRequest} variant="outline">
+                Hủy
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draw Response Dialog */}
+      {showDrawResponseDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
+            <h2 className="text-xl font-bold mb-4">Yêu cầu cầu hòa</h2>
+            <p className="mb-6">
+              Đối thủ muốn cầu hòa. Bạn có chấp nhận không?
+            </p>
+            <div className="flex justify-center gap-4">
+              <Button
+                onClick={() => handleDrawResponse(true)}
+                className="bg-green-500 hover:bg-green-600 text-white"
+              >
+                Chấp nhận
+              </Button>
+              <Button
+                onClick={() => handleDrawResponse(false)}
+                className="bg-red-500 hover:bg-red-600 text-white"
+              >
+                Từ chối
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

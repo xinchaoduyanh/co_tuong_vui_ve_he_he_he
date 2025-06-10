@@ -548,7 +548,8 @@ public class WebSocketController {
 
     @MessageMapping("/game.drawOffer")
     public void handleDrawOffer(@Payload DrawOfferRequest request) {
-        log.info("[BE-Game] Received draw offer: matchId={}, playerId={}", request.getMatchId(), request.getPlayerId());
+        log.info("[BE-Game] ====== Draw Offer Request Received ======");
+        log.info("[BE-Game] Request details: matchId={}, playerId={}", request.getMatchId(), request.getPlayerId());
         
         Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
         if (matchOpt.isEmpty()) {
@@ -561,23 +562,32 @@ public class WebSocketController {
             ? match.getPlayer2().getId() 
             : match.getPlayer1().getId();
             
-        // Gửi thông báo đề nghị hòa cờ
+        log.info("[BE-Game] Match details: player1={}, player2={}, opponentId={}", 
+            match.getPlayer1().getId(), match.getPlayer2().getId(), opponentId);
+            
+        // Gửi thông báo đề nghị hòa cờ đến đối thủ
         Map<String, Object> response = new HashMap<>();
         response.put("type", "DRAW_OFFER");
         response.put("from", request.getPlayerId());
+        response.put("matchId", request.getMatchId());
         
-        messagingTemplate.convertAndSendToUser(
-            opponentId,
-            "/queue/match." + request.getMatchId() + ".drawOffer",
-            response
-        );
+        log.info("[BE-Game] Sending draw offer notification to opponent: {}", opponentId);
+        log.info("[BE-Game] Draw offer message content: {}", response);
+        log.info("[BE-Game] Sending to topic: /topic/match.{}.drawOffer", request.getMatchId());
+        
+        try {
+            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".drawOffer", response);
+            log.info("[BE-Game] Draw offer message sent successfully");
+        } catch (Exception e) {
+            log.error("[BE-Game] Error sending draw offer message: {}", e.getMessage(), e);
+        }
     }
 
-    @MessageMapping("/game.drawResponse")
+    @MessageMapping("/game.drawResponse") 
     public void handleDrawResponse(@Payload DrawResponseRequest request) {
         log.info("[BE-Game] Received draw response: matchId={}, playerId={}, accepted={}", 
             request.getMatchId(), request.getPlayerId(), request.isAccepted());
-        
+            
         Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
         if (matchOpt.isEmpty()) {
             log.error("[BE-Game] Draw response: Match not found: {}", request.getMatchId());
@@ -590,38 +600,36 @@ public class WebSocketController {
             : match.getPlayer1().getId();
             
         if (request.isAccepted()) {
-            // Gửi thông báo kết thúc trận đấu hòa
-            Map<String, Object> response = new HashMap<>();
-            response.put("type", "END_GAME");
-            response.put("reason", "DRAW");
-            response.put("player1", match.getPlayer1());
-            response.put("player2", match.getPlayer2());
-            
-            // Cập nhật trạng thái trận đấu
+            // Cập nhật trạng thái match thành hòa
             match.setEndDate(new Date());
             match.setWinner(null); // Hòa cờ không có người thắng
             matchService.updateMatch(match);
             
-            // Cập nhật trạng thái người chơi
+            // Cập nhật trạng thái người chơi về ONLINE
             playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
             playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
             
-            // Gửi thông báo kết thúc trận đấu
-            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", response);
+            // Gửi thông báo kết thúc trận đấu hòa
+            Map<String, Object> endGameMsg = new HashMap<>();
+            endGameMsg.put("type", "END_GAME");
+            endGameMsg.put("winner", "DRAW");
+            endGameMsg.put("player1", match.getPlayer1());
+            endGameMsg.put("player2", match.getPlayer2());
+            endGameMsg.put("player1EloChange", 0); // Hòa cờ không thay đổi Elo
+            endGameMsg.put("player2EloChange", 0);
+            
+            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", endGameMsg);
             
             // Gửi danh sách online mới
             messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
         } else {
-            // Gửi thông báo từ chối hòa cờ
+            // Gửi thông báo từ chối hòa cờ đến đối thủ
             Map<String, Object> response = new HashMap<>();
             response.put("type", "DRAW_REJECTED");
             response.put("from", request.getPlayerId());
+            response.put("matchId", request.getMatchId());
             
-            messagingTemplate.convertAndSendToUser(
-                opponentId,
-                "/queue/match." + request.getMatchId() + ".drawResponse",
-                response
-            );
+            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".drawResponse", response);
         }
     }
 } 
