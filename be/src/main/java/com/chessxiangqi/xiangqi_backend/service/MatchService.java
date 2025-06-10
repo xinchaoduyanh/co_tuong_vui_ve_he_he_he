@@ -30,8 +30,7 @@ public class MatchService {
         return matchRepository.save(match);
     }
 
-    public Match updateMatch(String id, Match match) {
-        match.setId(id);
+    public Match updateMatch(Match match) {
         return matchRepository.save(match);
     }
 

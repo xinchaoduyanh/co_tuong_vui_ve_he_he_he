@@ -148,4 +148,13 @@ public class PlayerService {
         
         playerRepository.save(player);
     }
+
+    public void updatePlayerElo(String playerId, int eloChange) {
+        Optional<Player> playerOpt = playerRepository.findById(playerId);
+        if (playerOpt.isPresent()) {
+            Player player = playerOpt.get();
+            player.setElo(player.getElo() + eloChange);
+            playerRepository.save(player);
+        }
+    }
 } 

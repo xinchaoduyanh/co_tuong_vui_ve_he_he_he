@@ -58,13 +58,12 @@ public class ChallengeService {
         response.put("target", targetUsername);
         response.put("pendingChallenges", getPendingChallengesForUser(targetUsername));
 
-        String destination = "/user/" + targetUsername + "/queue/challenge";
-        log.info("[BE-16] Sending challenge notification to {} via {}", targetUsername, destination);
+        log.info("[BE-16] Sending challenge notification to {} via /queue/challenge", targetUsername);
         log.info("[BE-16.1] Challenge message content: {}", response);
         
         messagingTemplate.convertAndSendToUser(
             targetUsername,
-            "/user/" + targetUsername + "/queue/challenge",
+            "/queue/challenge",
             response
         );
         log.info("[BE-16.2] Challenge notification sent successfully");
@@ -75,13 +74,12 @@ public class ChallengeService {
         challengerResponse.put("to", targetUsername);
         challengerResponse.put("status", "PENDING");
 
-        String challengerDestination = "/user/" + challengerUsername + "/queue/challenge";
-        log.info("[BE-17] Sending confirmation to challenger {} via {}", challengerUsername, challengerDestination);
+        log.info("[BE-17] Sending confirmation to challenger {} via /queue/challenge", challengerUsername);
         log.info("[BE-17.1] Confirmation message content: {}", challengerResponse);
 
         messagingTemplate.convertAndSendToUser(
             challengerUsername,
-            "/user/" + challengerUsername + "/queue/challenge",
+            "/queue/challenge",
             challengerResponse
         );
         log.info("[BE-17.2] Confirmation sent successfully");

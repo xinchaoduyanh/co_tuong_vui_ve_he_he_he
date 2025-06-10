@@ -65,6 +65,9 @@ export default function GameBoard() {
   const router = useRouter();
   const { showNotification } = useNotification();
 
+  // New state to track if welcome message has been shown
+  const [hasShownWelcome, setHasShownWelcome] = useState(false);
+
   // Xác định màu cờ của mình
   const myColor =
     user?.id === player1?.id
@@ -193,6 +196,45 @@ export default function GameBoard() {
     });
     return () => sub.unsubscribe();
   }, [stompClient, isConnected, matchId, user, router, showNotification]);
+
+  // Hiển thị thông báo chào mừng khi vào game
+  useEffect(() => {
+    if (
+      !isLoading &&
+      player1 &&
+      player2 &&
+      myColor &&
+      user &&
+      currentTurn &&
+      !hasShownWelcome
+    ) {
+      const opponent = user.id === player1.id ? player2 : player1;
+      const isMyTurn =
+        (myColor === "red" && currentTurn === "r") ||
+        (myColor === "black" && currentTurn === "b");
+
+      showNotification({
+        severity: "info",
+        summary: "Chào mừng!",
+        detail: `Xin chào đến với game đấu, đối thủ của bạn là ${
+          opponent.username
+        }, bạn xuất phát với quân ${myColor === "red" ? "đỏ" : "đen"} xin hãy ${
+          isMyTurn ? "đi trước" : "chờ đối thủ"
+        }`,
+        life: 5000,
+      });
+      setHasShownWelcome(true); // Mark as shown
+    }
+  }, [
+    isLoading,
+    player1,
+    player2,
+    myColor,
+    user,
+    currentTurn,
+    hasShownWelcome,
+    showNotification,
+  ]);
 
   // Helper: Serialize pieces array to boardState string (90 ký tự)
   function serializePiecesToBoardState(
@@ -327,31 +369,35 @@ export default function GameBoard() {
           </Button>
         </div>
 
-        {/* Black player (top) */}
-        <div
-          className={`flex items-center justify-between p-3 rounded-t-lg ${
-            currentTurn === "b" ? "bg-amber-100" : "bg-white"
-          } mb-2 shadow-md border border-amber-200`}
-        >
-          <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
-              <AvatarImage src="/placeholder.svg" alt={player2?.username} />
-              <AvatarFallback className="bg-gray-800 text-gray-100">
-                {player2?.username?.substring(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{player2?.username}</p>
-              <div className="flex items-center text-sm text-gray-500">
-                <Trophy className="h-3 w-3 mr-1 text-amber-500" />
-                <span>ELO: {player2?.elo}</span>
-              </div>
-            </div>
+        {/* Turn indicator */}
+        <div className="w-full max-w-5xl text-center text-lg font-semibold mb-4">
+          {myColor &&
+          currentTurn &&
+          ((myColor === "red" && currentTurn === "r") ||
+            (myColor === "black" && currentTurn === "b"))
+            ? "Lượt của bạn !"
+            : "Chờ đối thủ"}
+        </div>
+
+        {/* Player info (top) */}
+        <div className="w-full max-w-5xl bg-white rounded-lg shadow-md p-4 mb-4 flex items-center">
+          {/* Player1 (Red player) details */}
+          <Avatar className="h-10 w-10 border-2 border-red-400 shadow-sm">
+            <AvatarImage src="/placeholder.svg" alt={player1?.username} />
+            <AvatarFallback>
+              {player1?.username?.substring(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col items-center">
+            <p className="font-medium">
+              {player1?.username} {user?.id === player1?.id && "(Bạn)"}
+            </p>
+            <span>ELO: {player1?.elo}</span>
           </div>
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full shadow-inner">
-            <Clock className="h-4 w-4 text-gray-500" />
-            <span className="font-mono">{players.black.timeLeft}</span>
-          </div>
+          <span className="ml-auto text-sm font-mono">
+            <Clock className="inline-block w-4 h-4 mr-1" />
+            {players.red.timeLeft}
+          </span>
         </div>
 
         {/* Game board container with padding */}
@@ -701,31 +747,25 @@ export default function GameBoard() {
           </div>
         </div>
 
-        {/* Red player (bottom) */}
-        <div
-          className={`flex items-center justify-between p-3 rounded-b-lg ${
-            currentTurn === "r" ? "bg-amber-100" : "bg-white"
-          } shadow-md border border-amber-200`}
-        >
-          <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10 border-2 border-red-400 shadow-sm">
-              <AvatarImage src="/placeholder.svg" alt={player1?.username} />
-              <AvatarFallback className="bg-red-100 text-red-700">
-                {player1?.username?.substring(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{player1?.username}</p>
-              <div className="flex items-center text-sm text-gray-500">
-                <Trophy className="h-3 w-3 mr-1 text-amber-500" />
-                <span>ELO: {player1?.elo}</span>
-              </div>
-            </div>
+        {/* Player info (bottom) */}
+        <div className="w-full max-w-5xl bg-white rounded-lg shadow-md p-4 mt-4 flex items-center">
+          {/* Player2 (Black player) details */}
+          <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
+            <AvatarImage src="/placeholder.svg" alt={player2?.username} />
+            <AvatarFallback>
+              {player2?.username?.substring(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col items-center">
+            <p className="font-medium">
+              {player2?.username} {user?.id === player2?.id && "(Bạn)"}
+            </p>
+            <span>ELO: {player2?.elo}</span>
           </div>
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full shadow-inner">
-            <Clock className="h-4 w-4 text-gray-500" />
-            <span className="font-mono">{players.red.timeLeft}</span>
-          </div>
+          <span className="ml-auto text-sm font-mono">
+            <Clock className="inline-block w-4 h-4 mr-1" />
+            {players.black.timeLeft}
+          </span>
         </div>
 
         {/* Game controls */}

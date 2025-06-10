@@ -16,6 +16,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import com.chessxiangqi.xiangqi_backend.dto.ChallengeMessage;
+import com.chessxiangqi.xiangqi_backend.dto.DrawOfferRequest;
+import com.chessxiangqi.xiangqi_backend.dto.DrawResponseRequest;
+import com.chessxiangqi.xiangqi_backend.dto.SurrenderRequest;
 import com.chessxiangqi.xiangqi_backend.model.Match;
 import com.chessxiangqi.xiangqi_backend.model.Move;
 import com.chessxiangqi.xiangqi_backend.model.OnlinePlayer;
@@ -30,7 +34,6 @@ import com.chessxiangqi.xiangqi_backend.service.PlayerMatchService;
 import com.chessxiangqi.xiangqi_backend.service.PlayerService;
 import com.chessxiangqi.xiangqi_backend.service.WebSocketService;
 import com.chessxiangqi.xiangqi_backend.util.BoardChecker;
-import com.chessxiangqi.xiangqi_backend.dto.ChallengeMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +82,13 @@ public class WebSocketController {
         messagingTemplate.convertAndSend("/queue/session-" + username, sessionId);
         // Gửi danh sách online khi có người mới connect
         messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
+
+        // Gửi danh sách online riêng cho user mới connect
+        messagingTemplate.convertAndSendToUser(
+            username,
+            "/queue/online-users",
+            playerService.getOnlinePlayers()
+        );
     }
 
     @EventListener
@@ -183,12 +193,14 @@ public class WebSocketController {
             response.put("player1", Map.of(
                 "id", player1.getId(),
                 "username", player1.getUsername(),
-                "color", "r"
+                "color", "r",
+                "elo", player1.getElo()
             ));
             response.put("player2", Map.of(
                 "id", player2.getId(),
                 "username", player2.getUsername(),
-                "color", "b"
+                "color", "b",
+                "elo", player2.getElo()
             ));
             response.put("currentTurn", "r");
             response.put("initialBoardState", initialMove.getBoardState());
@@ -441,6 +453,28 @@ public class WebSocketController {
         }
     }
 
+    @MessageMapping("/challenge.send")
+    public void handleChallengeSend(@Payload String targetUsername, SimpMessageHeaderAccessor headerAccessor) {
+        String fromUsername = (String) headerAccessor.getSessionAttributes().get("username");
+        String sessionId = headerAccessor.getSessionId();
+
+        // Kiểm tra người chơi có tồn tại không
+        Optional<Player> playerOpt = playerService.getPlayerByUsername(targetUsername);
+        if (playerOpt.isEmpty() || !playerService.isPlayerOnline(targetUsername)) {
+            log.warn("[BE-11] Player {} is not online or does not exist", targetUsername);
+            return;
+        }
+
+        // Kiểm tra người chơi có thể nhận thách đấu không
+        if (!playerService.canBeChallenged(targetUsername)) {
+            log.warn("[BE-12] Player {} cannot be challenged", targetUsername);
+            return;
+        }
+
+        log.info("[BE-3] Sending challenge from {} to {}", fromUsername, targetUsername);
+        challengeService.sendChallenge(fromUsername, targetUsername);
+    }
+
     // Helper method to calculate Elo change
     private int calculateEloChange(Player player1, Player player2, boolean isWinner) {
         int basePoint = 20;
@@ -458,5 +492,136 @@ public class WebSocketController {
         }
         
         return pointChange;
+    }
+
+    @MessageMapping("/game.surrender")
+    public void handleSurrender(@Payload SurrenderRequest request) {
+        log.info("[BE-Game] Received surrender request: matchId={}, playerId={}", request.getMatchId(), request.getPlayerId());
+        
+        Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
+        if (matchOpt.isEmpty()) {
+            log.error("[BE-Game] Surrender: Match not found: {}", request.getMatchId());
+            return;
+        }
+        
+        Match match = matchOpt.get();
+        String winnerId = match.getPlayer1().getId().equals(request.getPlayerId()) 
+            ? match.getPlayer2().getId() 
+            : match.getPlayer1().getId();
+            
+        // Gửi thông báo kết thúc trận đấu
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "END_GAME");
+        response.put("winner", match.getPlayer1().getId().equals(winnerId) ? "red" : "black");
+        response.put("reason", "SURRENDER");
+        response.put("player1", match.getPlayer1());
+        response.put("player2", match.getPlayer2());
+        
+        // Tính toán Elo change
+        int player1EloChange = calculateEloChange(match.getPlayer1(), match.getPlayer2(), 
+            match.getPlayer1().getId().equals(winnerId));
+        int player2EloChange = calculateEloChange(match.getPlayer2(), match.getPlayer1(), 
+            match.getPlayer2().getId().equals(winnerId));
+            
+        response.put("player1EloChange", player1EloChange);
+        response.put("player2EloChange", player2EloChange);
+        
+        // Cập nhật Elo cho người chơi
+        playerService.updatePlayerElo(match.getPlayer1().getId(), player1EloChange);
+        playerService.updatePlayerElo(match.getPlayer2().getId(), player2EloChange);
+        
+        // Cập nhật trạng thái trận đấu
+        match.setEndDate(new Date());
+        match.setWinner(match.getPlayer1().getId().equals(winnerId) ? match.getPlayer1() : match.getPlayer2());
+        matchService.updateMatch(match);
+        
+        // Cập nhật trạng thái người chơi
+        playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
+        playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
+        
+        // Gửi thông báo kết thúc trận đấu
+        messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", response);
+        
+        // Gửi danh sách online mới
+        messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
+    }
+
+    @MessageMapping("/game.drawOffer")
+    public void handleDrawOffer(@Payload DrawOfferRequest request) {
+        log.info("[BE-Game] Received draw offer: matchId={}, playerId={}", request.getMatchId(), request.getPlayerId());
+        
+        Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
+        if (matchOpt.isEmpty()) {
+            log.error("[BE-Game] Draw offer: Match not found: {}", request.getMatchId());
+            return;
+        }
+        
+        Match match = matchOpt.get();
+        String opponentId = match.getPlayer1().getId().equals(request.getPlayerId()) 
+            ? match.getPlayer2().getId() 
+            : match.getPlayer1().getId();
+            
+        // Gửi thông báo đề nghị hòa cờ
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "DRAW_OFFER");
+        response.put("from", request.getPlayerId());
+        
+        messagingTemplate.convertAndSendToUser(
+            opponentId,
+            "/queue/match." + request.getMatchId() + ".drawOffer",
+            response
+        );
+    }
+
+    @MessageMapping("/game.drawResponse")
+    public void handleDrawResponse(@Payload DrawResponseRequest request) {
+        log.info("[BE-Game] Received draw response: matchId={}, playerId={}, accepted={}", 
+            request.getMatchId(), request.getPlayerId(), request.isAccepted());
+        
+        Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
+        if (matchOpt.isEmpty()) {
+            log.error("[BE-Game] Draw response: Match not found: {}", request.getMatchId());
+            return;
+        }
+        
+        Match match = matchOpt.get();
+        String opponentId = match.getPlayer1().getId().equals(request.getPlayerId()) 
+            ? match.getPlayer2().getId() 
+            : match.getPlayer1().getId();
+            
+        if (request.isAccepted()) {
+            // Gửi thông báo kết thúc trận đấu hòa
+            Map<String, Object> response = new HashMap<>();
+            response.put("type", "END_GAME");
+            response.put("reason", "DRAW");
+            response.put("player1", match.getPlayer1());
+            response.put("player2", match.getPlayer2());
+            
+            // Cập nhật trạng thái trận đấu
+            match.setEndDate(new Date());
+            match.setWinner(null); // Hòa cờ không có người thắng
+            matchService.updateMatch(match);
+            
+            // Cập nhật trạng thái người chơi
+            playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
+            playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
+            
+            // Gửi thông báo kết thúc trận đấu
+            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", response);
+            
+            // Gửi danh sách online mới
+            messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
+        } else {
+            // Gửi thông báo từ chối hòa cờ
+            Map<String, Object> response = new HashMap<>();
+            response.put("type", "DRAW_REJECTED");
+            response.put("from", request.getPlayerId());
+            
+            messagingTemplate.convertAndSendToUser(
+                opponentId,
+                "/queue/match." + request.getMatchId() + ".drawResponse",
+                response
+            );
+        }
     }
 } 

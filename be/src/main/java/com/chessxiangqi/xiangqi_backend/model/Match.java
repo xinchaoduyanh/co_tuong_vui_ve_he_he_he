@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import lombok.Data;
 
@@ -27,4 +28,12 @@ public class Match {
     private Date endDate;
     private String result; // Player | AIModel | DRAW
     private boolean isTournamentMatch;
+
+    @ManyToOne
+    @JoinColumn(name = "winner_id")
+    private Player winner;
+
+    public void setWinner(Player winner) {
+        this.winner = winner;
+    }
 } 
