@@ -122,7 +122,9 @@ public class PlayerService {
     }
 
     public List<OnlinePlayer> getOnlinePlayers() {
-        List<OnlinePlayer> players = new ArrayList<>(onlinePlayersByUsername.values());
+        List<OnlinePlayer> players = onlinePlayersByUsername.values().stream()
+            .filter(p -> p.getStatus() == PlayerStatus.ONLINE)
+            .collect(Collectors.toList());
         log.info("[STATUS] Current online players: {}", 
             players.stream()
                 .map(p -> String.format("[%s] %s", p.getStatus(), p.getUsername()))

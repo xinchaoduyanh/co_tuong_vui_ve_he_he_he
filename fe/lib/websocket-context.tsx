@@ -11,6 +11,7 @@ import { Client } from "@stomp/stompjs";
 import { toast } from "sonner";
 import { useAuth } from "./api/context/AuthContext";
 import { useNotification } from "@/components/NotificationProvider";
+import { useRouter } from "next/navigation";
 
 interface WebSocketContextType {
   stompClient: Client | null;
@@ -42,6 +43,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [pendingChallenges, setPendingChallenges] = useState<string[]>([]);
   const { showNotification, showChallengeDialog } = useNotification();
   const stompClientRef = useRef<Client | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     stompClientRef.current = stompClient;
@@ -133,6 +135,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           // Đợi nhận sessionId trước khi tiếp tục
           const sessionId = await sessionPromise;
           console.log("[FE] Got sessionId, proceeding with setup:", sessionId);
+
+          // Kiểm tra xem người chơi có đang trong game không
+          const matchId = localStorage.getItem("matchId");
+          if (matchId) {
+            console.log("[FE] Player is in game, updating status to IN_GAME");
+            client.publish({
+              destination: "/app/user.status",
+              body: JSON.stringify({ status: "IN_GAME" }),
+              headers: {
+                username: username,
+                sessionId: sessionId,
+              },
+            });
+          }
 
           // Đăng ký lắng nghe danh sách người chơi online
           client.subscribe("/topic/users.online", (message) => {
@@ -237,7 +253,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                   }
                 );
               } else if (challenge.type === "CHALLENGE_REJECTED") {
-                console.log("[FE] Challenge rejected by:", challenge.from);
+                removePendingChallenge(setPendingChallenges, challenge.from);
                 showNotification({
                   severity: "warn",
                   summary: "Lời mời bị từ chối",
@@ -247,8 +263,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                   life: 3000,
                 });
               } else if (challenge.type === "CHALLENGE_ACCEPTED") {
+                removePendingChallenge(setPendingChallenges, challenge.from);
                 console.log("[FE] Challenge accepted by:", challenge.from);
-                setPendingChallenges([]);
+                console.log("[FE] Match info:", {
+                  matchId: challenge.matchId,
+                  player1: challenge.player1,
+                  player2: challenge.player2,
+                  currentTurn: challenge.currentTurn,
+                  initialBoardState: challenge.initialBoardState,
+                });
 
                 // Lưu thông tin trận đấu vào localStorage
                 localStorage.setItem(
@@ -285,8 +308,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                   life: 3000,
                 });
 
-                // Chuyển sang màn hình bàn cờ
-                window.location.href = `/game-board?matchId=${challenge.matchId}`;
+                // Đợi một chút để đảm bảo localStorage đã được cập nhật
+                setTimeout(() => {
+                  router.push(`/game-board?matchId=${challenge.matchId}`);
+                }, 500);
               } else if (challenge.type === "ERROR") {
                 console.log("[FE] Challenge error:", challenge.message);
                 showNotification({
@@ -355,7 +380,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         stompClient.deactivate();
       }
     };
-  }, [user, retryCount, showNotification]);
+  }, [user, retryCount, showNotification, router]);
 
   useEffect(() => {
     if (!stompClient || !isConnected) return;
@@ -411,12 +436,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             }
           );
         } else if (data.type === "CHALLENGE_REJECTED") {
+          removePendingChallenge(setPendingChallenges, data.challenged);
           showNotification({
             severity: "warn",
             summary: "Thách đấu bị từ chối",
             detail: `${data.challenged} đã từ chối thách đấu của bạn.`,
           });
         } else if (data.type === "CHALLENGE_ACCEPTED") {
+          removePendingChallenge(setPendingChallenges, data.challenged);
           showNotification({
             severity: "success",
             summary: "Thách đấu được chấp nhận",
@@ -438,6 +465,27 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     sessionId,
   ]);
 
+  const handleSendChallenge = (targetUsername: string) => {
+    if (!stompClient?.connected) {
+      toast.error("Không thể kết nối đến server");
+      return;
+    }
+    if (!user?.username || !sessionId) {
+      toast.error("Không thể gửi thách đấu: Thông tin người dùng không hợp lệ");
+      return;
+    }
+    // Thêm vào pendingChallenges ngay khi gửi
+    setPendingChallenges((prev) => [...prev, targetUsername]);
+    stompClient.publish({
+      destination: "/app/challenge.send",
+      body: targetUsername,
+      headers: {
+        username: user?.username,
+        sessionId: sessionId,
+      },
+    });
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -456,4 +504,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
 export function useWebSocket() {
   return useContext(WebSocketContext);
+}
+
+// Thêm hàm tiện ích để xóa 1 username khỏi pendingChallenges
+function removePendingChallenge(
+  setPendingChallenges: (cb: (prev: string[]) => string[]) => void,
+  username: string
+) {
+  setPendingChallenges((prev) => prev.filter((u) => u !== username));
 }

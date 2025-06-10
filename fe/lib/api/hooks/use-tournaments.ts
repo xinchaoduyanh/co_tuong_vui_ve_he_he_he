@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
+import { useState, useEffect } from "react";
 
 // Mock tournament data
 const mockTournaments = [
@@ -59,34 +59,34 @@ const mockTournaments = [
     participants: 32,
     champion: "ChessKing",
   },
-]
+];
 
 export function useTournaments() {
-  const [data, setData] = useState<typeof mockTournaments>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const [data, setData] = useState<typeof mockTournaments>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     const getTournaments = async () => {
       try {
-        setIsLoading(true)
+        setIsLoading(true);
         // In a real app, this would be an API call
         // const response = await fetchTournaments()
         // setData(response)
 
         // Using mock data for now
         setTimeout(() => {
-          setData(mockTournaments)
-          setIsLoading(false)
-        }, 500)
+          setData(mockTournaments);
+          setIsLoading(false);
+        }, 500);
       } catch (err) {
-        setError(err instanceof Error ? err : new Error("Unknown error"))
-        setIsLoading(false)
+        setError(err instanceof Error ? err : new Error("Unknown error"));
+        setIsLoading(false);
       }
-    }
+    };
 
-    getTournaments()
-  }, [])
+    getTournaments();
+  }, []);
 
-  return { data, isLoading, error }
+  return { data, isLoading, error };
 }

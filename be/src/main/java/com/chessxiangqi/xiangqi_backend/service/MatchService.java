@@ -2,6 +2,7 @@ package com.chessxiangqi.xiangqi_backend.service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,8 @@ public class MatchService {
 
     public Match createMatch(Match match) {
         log.info("Creating new match between {} and {}", match.getPlayer1().getId(), match.getPlayer2().getId());
+        // Generate and set ID before saving
+        match.setId(UUID.randomUUID().toString());
         return matchRepository.save(match);
     }
 
@@ -56,6 +59,4 @@ public class MatchService {
         matchRepository.save(match);
         return match;
     }
-
- 
 } 

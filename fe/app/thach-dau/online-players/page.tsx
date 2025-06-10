@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useWebSocket } from "@/lib/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useOnlinePlayers } from "@/lib/api/hooks/use-online-players";
 
 type OnlinePlayer = {
   id: string;
@@ -16,7 +17,9 @@ type OnlinePlayer = {
   status: string;
 };
 
+
 export default function OnlinePlayersPage() {
+  const { data: apiOnlineUsers, isLoading, error } = useOnlinePlayers();
   const [onlineUsers, setOnlineUsers] = useState<OnlinePlayer[]>([]);
   const {
     stompClient,
@@ -27,8 +30,16 @@ export default function OnlinePlayersPage() {
   const user = useAuth();
   const router = useRouter();
 
+  // Khi apiOnlineUsers thay đổi (lần đầu vào trang), cập nhật danh sách
   useEffect(() => {
-    if (contextOnlineUsers) {
+    if (apiOnlineUsers && apiOnlineUsers.length > 0) {
+      setOnlineUsers(apiOnlineUsers);
+    }
+  }, [apiOnlineUsers]);
+
+  // Nếu có update từ socket, cập nhật lại
+  useEffect(() => {
+    if (contextOnlineUsers && contextOnlineUsers.length > 0) {
       setOnlineUsers(contextOnlineUsers);
     }
   }, [contextOnlineUsers]);
@@ -58,6 +69,21 @@ export default function OnlinePlayersPage() {
     });
     console.log("[FE] Challenge request sent to /app/challenge.send");
   };
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-4 text-center text-gray-500">
+        Đang tải danh sách người chơi online...
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="container mx-auto p-4 text-center text-red-500">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 space-y-6">

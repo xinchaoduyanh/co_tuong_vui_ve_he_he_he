@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -22,7 +23,6 @@ import com.chessxiangqi.xiangqi_backend.dto.DrawResponseRequest;
 import com.chessxiangqi.xiangqi_backend.dto.SurrenderRequest;
 import com.chessxiangqi.xiangqi_backend.model.Match;
 import com.chessxiangqi.xiangqi_backend.model.Move;
-import com.chessxiangqi.xiangqi_backend.model.OnlinePlayer;
 import com.chessxiangqi.xiangqi_backend.model.Player;
 import com.chessxiangqi.xiangqi_backend.model.PlayerMatch;
 import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
@@ -129,7 +129,7 @@ public class WebSocketController {
         log.info("[BE-4] Challenge accepted by {} from {}", targetUsername, challengerUsername);
 
         try {
-            // Lấy Player object từ username
+            // 1. Lấy Player object từ username
             var player1Opt = playerService.getPlayerByUsername(challengerUsername);
             var player2Opt = playerService.getPlayerByUsername(targetUsername);
             if (player1Opt.isEmpty() || player2Opt.isEmpty()) {
@@ -148,44 +148,35 @@ public class WebSocketController {
             var player1 = player1Opt.get();
             var player2 = player2Opt.get();
 
-            log.info("[BE-6] Creating match between {} (status: {}) and {} (status: {})", 
-                player1.getUsername(), player1.getStatus(),
-                player2.getUsername(), player2.getStatus());
-
-            // Tạo match mới
+            // 2. Tạo match mới
             Match match = new Match();
-            match.setPlayer1(player1); // Player 1 sẽ là đỏ (r)
-            match.setPlayer2(player2); // Player 2 sẽ là đen (b)
-            match.setStartDate(new Date());
-            // Lưu match vào database
+            match.setId(UUID.randomUUID().toString());
+            match.setPlayer1(player1);
+            match.setPlayer2(player2);
+            match.setCreatedAt(new Date());
             match = matchService.createMatch(match);
 
-            // Tạo move đầu tiên với trạng thái bàn cờ ban đầu
+            // 3. Tạo move đầu tiên với trạng thái bàn cờ ban đầu
             Move initialMove = new Move();
             initialMove.setMatchId(match.getId());
             initialMove.setTurnNumber(0);
-            String initialBoardState =    "rheakaehr..........c.....c.p.p.p.p.p..................P.P.P.P.P.C.....C..........RHEAKAEHR";
+            String initialBoardState = "rheakaehr..........c.....c.p.p.p.p.p..................P.P.P.P.P.C.....C..........RHEAKAEHR";
             initialMove.setBoardState(initialBoardState);
             initialMove.setNextTurn("r");
             moveService.saveMove(initialMove);
 
-            // Tạo PlayerMatch cho cả hai người chơi
+            // 4. Tạo PlayerMatch cho cả hai người chơi
             playerMatchService.createPlayerMatch(match.getPlayer1(), match.getPlayer2(), match);
             playerMatchService.createPlayerMatch(match.getPlayer2(), match.getPlayer1(), match);
 
-            // Cập nhật trạng thái cả hai người chơi thành IN_GAME
+            // 5. Gọi service để từ chối các lời mời khác
+            challengeService.acceptChallenge(challengerUsername, targetUsername);
+
+            // 6. Cập nhật trạng thái cả hai người chơi thành IN_GAME
             playerService.updatePlayerStatus(challengerUsername, PlayerStatus.IN_GAME);
             playerService.updatePlayerStatus(targetUsername, PlayerStatus.IN_GAME);
 
-            log.info("[BE-7] Updated player statuses - {}: IN_GAME, {}: IN_GAME", 
-                challengerUsername, targetUsername);
-
-            // Gửi danh sách online một lần duy nhất sau khi cập nhật status
-            List<OnlinePlayer> onlinePlayers = playerService.getOnlinePlayers();
-            log.info("[BE-8] Sending updated online players list. Count: {}", onlinePlayers.size());
-            messagingTemplate.convertAndSend("/topic/users.online", onlinePlayers);
-
-            // Gửi thông báo chấp nhận thách đấu kèm matchId và thông tin người chơi
+            // 7. Gửi thông báo chấp nhận thách đấu kèm matchId và thông tin người chơi
             Map<String, Object> response = new HashMap<>();
             response.put("type", "CHALLENGE_ACCEPTED");
             response.put("from", targetUsername);
@@ -205,17 +196,16 @@ public class WebSocketController {
             response.put("currentTurn", "r");
             response.put("initialBoardState", initialMove.getBoardState());
 
-            log.info("[BE-9] Sending challenge accepted notifications to both players");
+            // 8. Gửi thông báo cho người thách đấu (challenger)
+            log.info("[BE-9] Sending challenge accepted notification to challenger");
             messagingTemplate.convertAndSendToUser(
                 challengerUsername,
                 "/queue/challenge",
                 response
             );
-            messagingTemplate.convertAndSendToUser(
-                targetUsername,
-                "/queue/challenge",
-                response
-            );
+
+            // 9. Gửi danh sách online mới
+            messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
 
             log.info("[BE-10] Match created with ID: {} between {} and {}", 
                 match.getId(), challengerUsername, targetUsername);
@@ -421,9 +411,12 @@ public class WebSocketController {
             Optional<Match> matchOpt = matchService.getMatchById(matchId);
             if (matchOpt.isPresent()) {
                 Match match = matchOpt.get();
-                // Không update status về ONLINE nữa vì chúng ta muốn giữ status IN_GAME
+                // Cập nhật trạng thái người chơi về ONLINE khi game kết thúc
+                playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
+                playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
                 
-                // Không gửi danh sách online ở đây nữa
+                // Gửi danh sách online mới
+                messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
             }
         } catch (Exception e) {
             log.error("Error ending match: {}", e.getMessage());

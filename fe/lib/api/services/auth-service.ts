@@ -61,7 +61,5 @@ export async function loginUser(data: {
   // Thêm cookie để middleware có thể đọc
   document.cookie = `user=${JSON.stringify(response.data)}; path=/`;
 
-
-
   return response.data;
 }

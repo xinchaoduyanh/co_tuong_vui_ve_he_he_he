@@ -19,6 +19,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { useBoardLogic } from "@/lib/api/hooks/use-board-logic";
 import { useNotification } from "@/components/NotificationProvider";
+import { useAIGame } from "@/lib/api/hooks/use-ai-game";
 
 const redSymbols = {
   G: "帥",
@@ -52,7 +53,10 @@ export default function GameBoard() {
     initialBoardState,
     setPieces,
     setTurn,
-  } = useGameState();
+    isAITurn,
+    aiDifficulty,
+    setAIDifficulty,
+  } = useAIGame();
   const { stompClient, isConnected } = useWebSocket();
   const { user } = useAuth();
   const [boardState, setBoardState] = useState<string>(initialBoardState);
@@ -581,6 +585,37 @@ export default function GameBoard() {
     setDrawRequestFrom(null);
   };
 
+  // Add AI difficulty selector
+  const renderAIControls = () => {
+    if (!player2?.isAI) return null;
+
+    return (
+      <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mb-4">
+        <h3 className="text-lg font-semibold mb-2">Độ khó AI</h3>
+        <div className="flex gap-2">
+          <Button
+            variant={aiDifficulty === "easy" ? "default" : "outline"}
+            onClick={() => setAIDifficulty("easy")}
+          >
+            Dễ
+          </Button>
+          <Button
+            variant={aiDifficulty === "medium" ? "default" : "outline"}
+            onClick={() => setAIDifficulty("medium")}
+          >
+            Trung bình
+          </Button>
+          <Button
+            variant={aiDifficulty === "hard" ? "default" : "outline"}
+            onClick={() => setAIDifficulty("hard")}
+          >
+            Khó
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100">
@@ -592,6 +627,7 @@ export default function GameBoard() {
   return (
     <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
       <div className="w-full max-w-2xl mx-auto">
+        {renderAIControls()}
         <div className="flex items-center justify-between mb-4">
           <Link href="/">
             <Button

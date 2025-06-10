@@ -1,5 +1,7 @@
 package com.chessxiangqi.xiangqi_backend.service;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,10 +27,40 @@ public class ChallengeService {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    private static final long CHALLENGE_TIMEOUT_SECONDS = 8;
+
     // Lưu trữ các lời thách đấu đang chờ theo targetUsername
     private final Map<String, List<PendingChallenge>> pendingChallenges = new ConcurrentHashMap<>();
 
+    // Dọn dẹp các pending challenge đã hết hạn và gửi reject
+    private void cleanupExpiredChallenges(String targetUsername) {
+        List<PendingChallenge> challenges = pendingChallenges.get(targetUsername);
+        if (challenges == null) return;
+        LocalDateTime now = LocalDateTime.now();
+        List<PendingChallenge> expired = new ArrayList<>();
+        for (PendingChallenge c : new ArrayList<>(challenges)) {
+            if (Duration.between(c.getTimestamp(), now).getSeconds() > CHALLENGE_TIMEOUT_SECONDS) {
+                expired.add(c);
+                // Gửi thông báo từ chối do hết hạn
+                Map<String, String> response = new java.util.HashMap<>();
+                response.put("type", "CHALLENGE_REJECTED");
+                response.put("from", targetUsername);
+                response.put("message", "Lời mời thách đấu đã hết hạn");
+                messagingTemplate.convertAndSendToUser(
+                    c.getChallengerUsername(),
+                    "/queue/challenge",
+                    response
+                );
+            }
+        }
+        challenges.removeAll(expired);
+        if (challenges.isEmpty()) {
+            pendingChallenges.remove(targetUsername);
+        }
+    }
+
     public void sendChallenge(String challengerUsername, String targetUsername) {
+        cleanupExpiredChallenges(targetUsername);
         log.info("[BE-13] Processing challenge from {} to {}", challengerUsername, targetUsername);
         
         // Kiểm tra người chơi có thể nhận thách đấu không
@@ -86,6 +118,7 @@ public class ChallengeService {
     }
 
     public void acceptChallenge(String challengerUsername, String targetUsername) {
+        cleanupExpiredChallenges(targetUsername);
         log.info("[BE-17] Processing challenge acceptance from {} to {}", targetUsername, challengerUsername);
         
         // Xóa tất cả các lời thách đấu đang chờ của targetUsername
@@ -108,21 +141,10 @@ public class ChallengeService {
                     );
                 });
         }
-
-        // Gửi thông báo cho cả hai người chơi
-        Map<String, String> response = new java.util.HashMap<>();
-        response.put("type", "CHALLENGE_ACCEPTED");
-        response.put("from", targetUsername);
-
-        log.info("[BE-20] Sending acceptance notifications to both players");
-        messagingTemplate.convertAndSendToUser(
-            challengerUsername,
-            "/queue/challenge",
-            response
-        );
     }
 
     public void rejectChallenge(String challengerUsername, String targetUsername) {
+        cleanupExpiredChallenges(targetUsername);
         log.info("[BE-21] Processing challenge rejection from {} to {}", targetUsername, challengerUsername);
         
         // Xóa lời thách đấu cụ thể này khỏi danh sách đang chờ
@@ -152,6 +174,7 @@ public class ChallengeService {
     }
 
     public List<String> getPendingChallengesForUser(String username) {
+        cleanupExpiredChallenges(username);
         List<PendingChallenge> challenges = pendingChallenges.get(username);
         if (challenges == null) {
             log.debug("[BE-25] No pending challenges found for {}", username);
