@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,33 +28,38 @@ public class ChallengeService {
 
     private static final long CHALLENGE_TIMEOUT_SECONDS = 8;
 
-    // Lưu trữ các lời thách đấu đang chờ theo targetUsername
-    private final Map<String, List<PendingChallenge>> pendingChallenges = new ConcurrentHashMap<>();
+    // Lưu trữ các lời thách đấu đang chờ theo targetUsername -> challengerUsername -> PendingChallenge
+    private final Map<String, Map<String, PendingChallenge>> pendingChallenges = new ConcurrentHashMap<>();
 
-    // Dọn dẹp các pending challenge đã hết hạn và gửi reject
+    // Dọn dẹp các pending challenge đã hết hạn
     private void cleanupExpiredChallenges(String targetUsername) {
-        List<PendingChallenge> challenges = pendingChallenges.get(targetUsername);
-        if (challenges == null) return;
+        Map<String, PendingChallenge> challengesForTarget = pendingChallenges.get(targetUsername);
+        if (challengesForTarget == null) return;
         LocalDateTime now = LocalDateTime.now();
-        List<PendingChallenge> expired = new ArrayList<>();
-        for (PendingChallenge c : new ArrayList<>(challenges)) {
+        
+        List<String> expiredChallengers = new ArrayList<>();
+        challengesForTarget.entrySet().removeIf(entry -> {
+            PendingChallenge c = entry.getValue();
             if (Duration.between(c.getTimestamp(), now).getSeconds() > CHALLENGE_TIMEOUT_SECONDS) {
-                expired.add(c);
                 // Gửi thông báo từ chối do hết hạn
+                log.info("[BE-CHALLENGE-CLEANUP] Expired challenge from {} to {}. Sending rejection.", c.getChallengerUsername(), targetUsername);
                 Map<String, String> response = new java.util.HashMap<>();
                 response.put("type", "CHALLENGE_REJECTED");
                 response.put("from", targetUsername);
-                response.put("message", "Lời mời thách đấu đã hết hạn");
+                response.put("message", "Lời mời thách đấu đã hết hạn.");
                 messagingTemplate.convertAndSendToUser(
                     c.getChallengerUsername(),
                     "/queue/challenge",
                     response
                 );
+                return true;
             }
-        }
-        challenges.removeAll(expired);
-        if (challenges.isEmpty()) {
+            return false;
+        });
+
+        if (challengesForTarget.isEmpty()) {
             pendingChallenges.remove(targetUsername);
+            log.info("[BE-CHALLENGE-CLEANUP] Removed empty pending challenges list for {}", targetUsername);
         }
     }
 
@@ -66,17 +70,34 @@ public class ChallengeService {
         // Kiểm tra người chơi có thể nhận thách đấu không
         if (!playerService.canBeChallenged(targetUsername)) {
             log.warn("[BE-14] Player {} cannot be challenged", targetUsername);
+            Map<String, String> errorResponse = new java.util.HashMap<>();
+            errorResponse.put("type", "CHALLENGE_ERROR");
+            errorResponse.put("message", "Người chơi không thể nhận thách đấu lúc này");
             messagingTemplate.convertAndSendToUser(
                 challengerUsername,
-                "/queue/challenge.error",
-                "Người chơi không thể nhận thách đấu lúc này"
+                "/queue/challenge",
+                errorResponse
+            );
+            return;
+        }
+
+        // Kiểm tra nếu lời thách đấu tương tự đã tồn tại
+        Map<String, PendingChallenge> challengesForTarget = pendingChallenges.computeIfAbsent(targetUsername, k -> new ConcurrentHashMap<>());
+        if (challengesForTarget.containsKey(challengerUsername)) {
+            log.warn("[BE-13.1] Challenge from {} to {} is already pending. Ignoring.", challengerUsername, targetUsername);
+            Map<String, String> infoResponse = new java.util.HashMap<>();
+            infoResponse.put("type", "CHALLENGE_INFO");
+            infoResponse.put("message", "Bạn đã gửi lời thách đấu đến người chơi này. Vui lòng chờ phản hồi.");
+            messagingTemplate.convertAndSendToUser(
+                challengerUsername,
+                "/queue/challenge",
+                infoResponse
             );
             return;
         }
 
         // Thêm vào danh sách thách đấu đang chờ
-        pendingChallenges.computeIfAbsent(targetUsername, k -> new ArrayList<>())
-            .add(new PendingChallenge(challengerUsername, targetUsername));
+        challengesForTarget.put(challengerUsername, new PendingChallenge(challengerUsername, targetUsername));
 
         log.info("[BE-15] Added challenge to pending list. Current pending challenges for {}: {}", 
             targetUsername, 
@@ -88,7 +109,6 @@ public class ChallengeService {
         response.put("from", challengerUsername);
         response.put("challenger", challengerUsername);
         response.put("target", targetUsername);
-        response.put("pendingChallenges", getPendingChallengesForUser(targetUsername));
 
         log.info("[BE-16] Sending challenge notification to {} via /queue/challenge", targetUsername);
         log.info("[BE-16.1] Challenge message content: {}", response);
@@ -118,54 +138,58 @@ public class ChallengeService {
     }
 
     public void acceptChallenge(String challengerUsername, String targetUsername) {
-        cleanupExpiredChallenges(targetUsername);
-        log.info("[BE-17] Processing challenge acceptance from {} to {}", targetUsername, challengerUsername);
+        log.info("[BE-CHALLENGE-ACCEPT] Processing challenge acceptance from {} to {}", targetUsername, challengerUsername);
         
         // Xóa tất cả các lời thách đấu đang chờ của targetUsername
-        List<PendingChallenge> challenges = pendingChallenges.remove(targetUsername);
+        Map<String, PendingChallenge> challenges = pendingChallenges.remove(targetUsername);
         if (challenges != null) {
-            log.info("[BE-18] Removing {} pending challenges for {}", challenges.size(), targetUsername);
+            log.info("[BE-CHALLENGE-ACCEPT] Removed {} pending challenges for {}", challenges.size(), targetUsername);
             // Gửi thông báo từ chối cho tất cả các người thách đấu khác
-            challenges.stream()
-                .filter(c -> !c.getChallengerUsername().equals(challengerUsername))
-                .forEach(c -> {
-                    log.info("[BE-19] Sending rejection to other challenger: {}", c.getChallengerUsername());
+            challenges.forEach((otherChallenger, pendingChallenge) -> {
+                if (!otherChallenger.equals(challengerUsername)) {
+                    log.info("[BE-CHALLENGE-ACCEPT] Sending rejection to other challenger: {}", otherChallenger);
                     Map<String, String> rejectResponse = new java.util.HashMap<>();
                     rejectResponse.put("type", "CHALLENGE_REJECTED");
                     rejectResponse.put("from", targetUsername);
-                    rejectResponse.put("message", "Người chơi đã chấp nhận lời thách đấu khác");
+                    rejectResponse.put("message", String.format("Người chơi %s đã chấp nhận lời thách đấu từ người chơi khác.", targetUsername));
                     messagingTemplate.convertAndSendToUser(
-                        c.getChallengerUsername(),
+                        otherChallenger,
                         "/queue/challenge",
                         rejectResponse
                     );
-                });
+                    log.info("[BE-CHALLENGE-ACCEPT] Rejection sent to {}. Message: {}", otherChallenger, rejectResponse);
+                }
+            });
         }
     }
 
     public void rejectChallenge(String challengerUsername, String targetUsername) {
-        cleanupExpiredChallenges(targetUsername);
-        log.info("[BE-21] Processing challenge rejection from {} to {}", targetUsername, challengerUsername);
+        log.info("[BE-CHALLENGE-REJECT] Processing challenge rejection from {} to {}", targetUsername, challengerUsername);
+
+        Map<String, PendingChallenge> challengesForTarget = pendingChallenges.get(targetUsername);
         
-        // Xóa lời thách đấu cụ thể này khỏi danh sách đang chờ
-        List<PendingChallenge> challenges = pendingChallenges.get(targetUsername);
-        if (challenges != null) {
-            int initialSize = challenges.size();
-            challenges.removeIf(c -> c.getChallengerUsername().equals(challengerUsername));
-            log.info("[BE-22] Removed challenge from pending list. Before: {}, After: {}", 
-                initialSize, challenges.size());
-            if (challenges.isEmpty()) {
-                pendingChallenges.remove(targetUsername);
-                log.info("[BE-23] Removed empty pending challenges list for {}", targetUsername);
+        if (challengesForTarget != null) {
+            if (challengesForTarget.remove(challengerUsername) != null) {
+                log.info("[BE-CHALLENGE-REJECT] Removed challenge from pending list for {}. Challenger: {}", targetUsername, challengerUsername);
+            } else {
+                log.warn("[BE-CHALLENGE-REJECT] Challenge from {} to {} not found in pending list for removal (or already removed).".formatted(challengerUsername, targetUsername));
             }
+
+            if (challengesForTarget.isEmpty()) {
+                pendingChallenges.remove(targetUsername);
+                log.info("[BE-CHALLENGE-REJECT] Removed empty pending challenges list for {}", targetUsername);
+            }
+        } else {
+            log.warn("[BE-CHALLENGE-REJECT] No pending challenges found for target {}.", targetUsername);
         }
 
-        // Gửi thông báo từ chối cho người thách đấu
+        // Luôn gửi thông báo từ chối cho người thách đấu nếu phương thức này được gọi
         Map<String, String> response = new java.util.HashMap<>();
         response.put("type", "CHALLENGE_REJECTED");
         response.put("from", targetUsername);
+        response.put("message", String.format("Người chơi %s đã từ chối lời thách đấu của bạn.", targetUsername));
 
-        log.info("[BE-24] Sending rejection notification to {}", challengerUsername);
+        log.info("[BE-CHALLENGE-REJECT] Sending rejection notification to {}. Message: {}", challengerUsername, response);
         messagingTemplate.convertAndSendToUser(
             challengerUsername,
             "/queue/challenge",
@@ -175,14 +199,12 @@ public class ChallengeService {
 
     public List<String> getPendingChallengesForUser(String username) {
         cleanupExpiredChallenges(username);
-        List<PendingChallenge> challenges = pendingChallenges.get(username);
+        Map<String, PendingChallenge> challenges = pendingChallenges.get(username);
         if (challenges == null) {
             log.debug("[BE-25] No pending challenges found for {}", username);
             return new ArrayList<>();
         }
-        List<String> challengers = challenges.stream()
-            .map(PendingChallenge::getChallengerUsername)
-            .collect(Collectors.toList());
+        List<String> challengers = new ArrayList<>(challenges.keySet());
         log.debug("[BE-26] Found {} pending challenges for {}", challengers.size(), username);
         return challengers;
     }

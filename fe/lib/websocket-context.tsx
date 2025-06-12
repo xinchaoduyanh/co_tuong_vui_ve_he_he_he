@@ -263,7 +263,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                   life: 3000,
                 });
               } else if (challenge.type === "CHALLENGE_ACCEPTED") {
-                removePendingChallenge(setPendingChallenges, challenge.from);
+                // Clear all pending challenges when one is accepted
+                setPendingChallenges([]);
                 console.log("[FE] Challenge accepted by:", challenge.from);
                 console.log("[FE] Match info:", {
                   matchId: challenge.matchId,
@@ -443,7 +444,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             detail: `${data.challenged} đã từ chối thách đấu của bạn.`,
           });
         } else if (data.type === "CHALLENGE_ACCEPTED") {
-          removePendingChallenge(setPendingChallenges, data.challenged);
+          // Clear all pending challenges when one is accepted
+          setPendingChallenges([]);
           showNotification({
             severity: "success",
             summary: "Thách đấu được chấp nhận",

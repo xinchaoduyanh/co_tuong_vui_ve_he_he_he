@@ -2,6 +2,7 @@ package com.chessxiangqi.xiangqi_backend.model;
 
 import java.util.Date;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
@@ -28,6 +29,9 @@ public class Match {
     private Date endDate;
     private String result; // Player | AIModel | DRAW
     private boolean isTournamentMatch;
+    
+    @Column(name = "is_ai_game")
+    private boolean isAIGame; // Flag to indicate if this is an AI game
 
     @ManyToOne
     private Player winner;
@@ -110,5 +114,13 @@ public class Match {
 
     public void setWinner(Player winner) {
         this.winner = winner;
+    }
+
+    public boolean isAIGame() {
+        return isAIGame;
+    }
+
+    public void setIsAIGame(boolean isAIGame) {
+        this.isAIGame = isAIGame;
     }
 } 

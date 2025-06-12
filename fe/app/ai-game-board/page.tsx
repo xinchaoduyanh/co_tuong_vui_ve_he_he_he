@@ -12,13 +12,14 @@ import {
   VolumeX,
 } from "lucide-react";
 import Link from "next/link";
-import { parseBoardState, useGameState } from "@/lib/api/hooks/use-game-state";
+import { parseBoardState } from "@/lib/api/hooks/use-game-state";
 import { useState, useEffect, useRef } from "react";
 import { useWebSocket } from "@/lib/websocket-context";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { useBoardLogic } from "@/lib/api/hooks/use-board-logic";
 import { useNotification } from "@/components/NotificationProvider";
+import { useAIGame } from "@/lib/api/hooks/use-ai-game";
 
 const redSymbols = {
   G: "帥",
@@ -39,7 +40,7 @@ const blackSymbols = {
   S: "卒",
 };
 
-export default function GameBoard() {
+export default function AIGameBoard() {
   const { stompClient, isConnected } = useWebSocket();
   const { user } = useAuth();
   const [boardState, setBoardState] = useState<string>(
@@ -58,10 +59,6 @@ export default function GameBoard() {
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
   // State for surrender confirmation dialog
   const [showSurrenderDialog, setShowSurrenderDialog] = useState(false);
-  // Add new states for draw request
-  const [showDrawRequestDialog, setShowDrawRequestDialog] = useState(false);
-  const [showDrawResponseDialog, setShowDrawResponseDialog] = useState(false);
-  const [drawRequestFrom, setDrawRequestFrom] = useState<string | null>(null);
 
   const {
     matchId,
@@ -72,9 +69,9 @@ export default function GameBoard() {
     turn,
     setTurn,
     isLoading,
-    makeMove,
-    players,
-  } = useGameState();
+    isAITurn,
+    startAIGame,
+  } = useAIGame();
 
   // Xác định màu cờ của mình
   const myColor =
@@ -114,7 +111,8 @@ export default function GameBoard() {
     if (!stompClient || !isConnected || !matchId) return;
 
     const handleMove = (data: any) => {
-      console.log("Received move data:", data);
+      const movingPieceColor = turn; // 'turn' state variable holds the color of the player who just moved
+
       setBoardState(data.boardState);
       setTurn(data.nextTurn);
       setMoveDescription(data.moveDescription);
@@ -124,6 +122,34 @@ export default function GameBoard() {
       // Parse lại pieces từ boardState mới và cập nhật vào state
       const newPieces = parseBoardState(data.boardState);
       setPieces(newPieces);
+
+      // Extract move details from moveDescription and log concisely
+      let fenMove = "";
+      try {
+        const parts = data.moveDescription.split(" -> ");
+        if (parts.length === 2) {
+          const fromParts = parts[0].split(" "); // e.g., "C 1,2"
+          const fromCoords = fromParts[1].split(","); // e.g., "1", "2"
+          const toCoords = parts[1].split(","); // e.g., "2", "2"
+
+          const fromX = parseInt(fromCoords[0]);
+          const fromY = parseInt(fromCoords[1]);
+          const toX = parseInt(toCoords[0]);
+          const toY = parseInt(toCoords[1]);
+
+          const fenFromY = 9 - fromY;
+          const fenToY = 9 - toY;
+
+          const fenFromXChar = String.fromCharCode("a".charCodeAt(0) + fromX);
+          const fenToXChar = String.fromCharCode("a".charCodeAt(0) + toX);
+
+          fenMove = `${fenFromXChar}${fenFromY}${fenToXChar}${fenToY}`;
+        }
+      } catch (e) {
+        console.error("[FE-Game] Error parsing moveDescription for log:", e);
+      }
+
+      console.log(`[FE-Game] Move: ${fenMove} by ${movingPieceColor}`);
 
       if (data.isCheckmate) {
         showNotification({
@@ -227,11 +253,9 @@ export default function GameBoard() {
       showNotification({
         severity: "info",
         summary: "Chào mừng!",
-        detail: `Xin chào đến với game đấu, đối thủ của bạn là ${
-          opponent.username
-        }, bạn xuất phát với quân ${myColor === "r" ? "đỏ" : "đen"} xin hãy ${
-          isMyTurn ? "đi trước" : "chờ đối thủ"
-        }`,
+        detail: `Xin chào đến với game đấu với AI, bạn xuất phát với quân ${
+          myColor === "r" ? "đỏ" : "đen"
+        } xin hãy ${isMyTurn ? "đi trước" : "chờ AI"}`,
         life: 5000,
       });
       setHasShownWelcome(true); // Mark as shown
@@ -306,8 +330,9 @@ export default function GameBoard() {
     const newBoardState = serializePiecesToBoardState(newPieces);
     // 3. Gửi move lên BE với đầy đủ thông tin
     if (matchId && stompClient && myColor === turn) {
-      makeMove(
-        {
+      stompClient.publish({
+        destination: `/app/match.${matchId}.move`,
+        body: JSON.stringify({
           fromX: selectedPiece.x,
           fromY: selectedPiece.y,
           toX,
@@ -317,9 +342,8 @@ export default function GameBoard() {
           moveDescription: `${selectedPiece.type} ${selectedPiece.x},${selectedPiece.y} -> ${toX},${toY}`,
           boardState: newBoardState,
           playerId: user?.id,
-        },
-        matchId
-      );
+        }),
+      });
     }
     // 4. Reset selection (UI sẽ cập nhật khi nhận được move mới từ BE)
     resetSelection();
@@ -374,206 +398,12 @@ export default function GameBoard() {
     setShowSurrenderDialog(false);
   };
 
-  // Add draw request handlers
-  const handleDrawRequest = () => {
-    console.log("[FE-Game] ====== Draw Request Button Clicked ======");
-    console.log("[FE-Game] Current state:", {
-      stompClient: !!stompClient,
-      isConnected,
-      matchId,
-      userId: user?.id,
-      player1Id: player1?.id,
-      player2Id: player2?.id,
-    });
-
-    if (!stompClient || !isConnected) {
-      console.log("[FE-Game] WebSocket not connected");
-      showNotification({
-        severity: "error",
-        summary: "Lỗi kết nối",
-        detail: "Không thể kết nối đến máy chủ",
-        life: 3000,
-      });
-      return;
-    }
-    setShowDrawRequestDialog(true);
-  };
-
-  const handleConfirmDrawRequest = () => {
-    console.log("[FE-Game] ====== Confirming Draw Request ======");
-    console.log("[FE-Game] Current state:", {
-      stompClient: !!stompClient,
-      isConnected,
-      matchId,
-      userId: user?.id,
-    });
-
-    if (stompClient && isConnected && matchId && user?.id) {
-      const drawRequest = {
-        matchId: matchId,
-        playerId: user.id,
-      };
-      console.log("[FE-Game] Sending draw offer:", drawRequest);
-      try {
-        stompClient.publish({
-          destination: "/app/game.drawOffer",
-          body: JSON.stringify(drawRequest),
-        });
-        showNotification({
-          severity: "info",
-          summary: "Yêu cầu cầu hòa",
-          detail: "Đã gửi yêu cầu cầu hòa đến đối thủ.",
-          life: 3000,
-        });
-      } catch (error) {
-        console.error("[FE-Game] Error sending draw offer:", error);
-        showNotification({
-          severity: "error",
-          summary: "Lỗi",
-          detail: "Không thể gửi yêu cầu cầu hòa",
-          life: 3000,
-        });
-      }
-    }
-    setShowDrawRequestDialog(false);
-  };
-
-  const handleCancelDrawRequest = () => {
-    setShowDrawRequestDialog(false);
-  };
-
-  // Add WebSocket subscription for draw requests
+  // Start AI game when component mounts
   useEffect(() => {
-    console.log("[FE-Game] ====== Setting up WebSocket subscriptions ======");
-    console.log("[FE-Game] Current WebSocket state:", {
-      stompClient: !!stompClient,
-      isConnected,
-      matchId,
-      userId: user?.id,
-      player1Id: player1?.id,
-      player2Id: player2?.id,
-    });
-
-    if (!stompClient || !isConnected || !matchId) {
-      console.log(
-        "[FE-Game] Cannot setup draw subscriptions - Missing required data:",
-        {
-          stompClient: !!stompClient,
-          isConnected,
-          matchId,
-        }
-      );
-      return;
+    if (stompClient && isConnected && user && !matchId) {
+      startAIGame();
     }
-
-    console.log("[FE-Game] Setting up draw subscriptions for match:", matchId);
-    console.log(
-      "[FE-Game] Subscribing to topic:",
-      `/topic/match.${matchId}.drawOffer`
-    );
-
-    try {
-      // Subscribe to draw offer requests
-      const drawRequestSub = stompClient.subscribe(
-        `/topic/match.${matchId}.drawOffer`, // Changed from /queue to /topic
-        (msg) => {
-          console.log("[FE-Game] ====== Draw Offer Message Received ======");
-          console.log("[FE-Game] Message headers:", msg.headers);
-          console.log("[FE-Game] Message body:", msg.body);
-          console.log("[FE-Game] Current user:", user?.id);
-          console.log("[FE-Game] Current matchId:", matchId);
-          console.log("[FE-Game] ======================================");
-
-          const data = JSON.parse(msg.body);
-          console.log("[FE-Game] Parsed draw offer data:", data);
-
-          if (data.type === "DRAW_OFFER" && data.from !== user?.id) {
-            console.log("[FE-Game] Processing draw offer from:", data.from);
-            setDrawRequestFrom(data.from);
-            setShowDrawResponseDialog(true);
-            showNotification({
-              severity: "info",
-              summary: "Yêu cầu cầu hòa",
-              detail: "Đối thủ muốn cầu hòa với bạn",
-              life: 5000,
-            });
-          } else {
-            console.log("[FE-Game] Ignoring draw offer:", {
-              type: data.type,
-              from: data.from,
-              userId: user?.id,
-              isFromSelf: data.from === user?.id,
-            });
-          }
-        }
-      );
-
-      console.log("[FE-Game] Draw offer subscription setup complete");
-
-      // Subscribe to draw responses
-      const drawResponseSub = stompClient.subscribe(
-        `/topic/match.${matchId}.drawResponse`, // Changed from /queue to /topic
-        (msg) => {
-          console.log("[FE-Game] Received draw response:", msg.body);
-          const data = JSON.parse(msg.body);
-          if (data.type === "DRAW_REJECTED" && data.from !== user?.id) {
-            showNotification({
-              severity: "info",
-              summary: "Cầu hòa bị từ chối",
-              detail: "Đối thủ đã từ chối yêu cầu cầu hòa của bạn.",
-              life: 3000,
-            });
-          }
-        }
-      );
-
-      console.log("[FE-Game] Draw response subscription setup complete");
-      console.log(
-        "[FE-Game] ====== WebSocket subscriptions setup complete ======"
-      );
-
-      return () => {
-        console.log("[FE-Game] Cleaning up draw subscriptions");
-        drawRequestSub.unsubscribe();
-        drawResponseSub.unsubscribe();
-      };
-    } catch (error) {
-      console.error("[FE-Game] Error setting up draw subscriptions:", error);
-    }
-  }, [
-    stompClient,
-    isConnected,
-    matchId,
-    user,
-    showNotification,
-    player1,
-    player2,
-  ]);
-
-  const handleDrawResponse = (accepted: boolean) => {
-    if (stompClient && isConnected && matchId && user?.id) {
-      const drawResponse = {
-        matchId: matchId,
-        playerId: user.id,
-        accepted: accepted,
-      };
-      console.log("Sending draw response:", drawResponse);
-      stompClient.publish({
-        destination: "/app/game.drawResponse",
-        body: JSON.stringify(drawResponse),
-      });
-      showNotification({
-        severity: accepted ? "success" : "info",
-        summary: "Phản hồi cầu hòa",
-        detail: accepted
-          ? "Bạn đã chấp nhận cầu hòa"
-          : "Bạn đã từ chối cầu hòa",
-        life: 3000,
-      });
-    }
-    setShowDrawResponseDialog(false);
-    setDrawRequestFrom(null);
-  };
+  }, [stompClient, isConnected, user, matchId, startAIGame]);
 
   if (isLoading) {
     return (
@@ -597,16 +427,8 @@ export default function GameBoard() {
             </Button>
           </Link>
           <h1 className="text-2xl font-bold text-amber-800 bg-white/80 px-4 py-1 rounded-lg shadow-sm">
-            Cờ Tướng
+            Cờ Tướng vs AI
           </h1>
-          <Button
-            onClick={() => router.push("/ai-game-board")}
-            className="flex items-center gap-2"
-            variant="outline"
-          >
-            <Trophy className="h-4 w-4" />
-            Chơi với AI
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -615,15 +437,6 @@ export default function GameBoard() {
           >
             <Flag className="h-4 w-4 mr-1" />
             Đầu hàng
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-blue-500 border-blue-500 bg-white/80 hover:bg-white shadow-sm ml-2"
-            onClick={handleDrawRequest}
-            disabled={!isConnected || !stompClient}
-          >
-            Cầu hòa
           </Button>
         </div>
 
@@ -766,7 +579,7 @@ export default function GameBoard() {
                   {(myColor === "r" && turn === "r") ||
                   (myColor === "b" && turn === "b")
                     ? "Lượt của bạn !"
-                    : "Chờ đối thủ"}
+                    : "Chờ AI"}
                 </text>
               )}
 
@@ -1026,53 +839,6 @@ export default function GameBoard() {
               </Button>
               <Button onClick={handleCancelSurrender} variant="outline">
                 Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Draw Request Dialog */}
-      {showDrawRequestDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Cầu hòa</h2>
-            <p className="mb-6">Bạn có chắc chắn muốn gửi yêu cầu cầu hòa?</p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={handleConfirmDrawRequest}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                Gửi yêu cầu
-              </Button>
-              <Button onClick={handleCancelDrawRequest} variant="outline">
-                Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Draw Response Dialog */}
-      {showDrawResponseDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Yêu cầu cầu hòa</h2>
-            <p className="mb-6">
-              Đối thủ muốn cầu hòa. Bạn có chấp nhận không?
-            </p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={() => handleDrawResponse(true)}
-                className="bg-green-500 hover:bg-green-600 text-white"
-              >
-                Chấp nhận
-              </Button>
-              <Button
-                onClick={() => handleDrawResponse(false)}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                Từ chối
               </Button>
             </div>
           </div>

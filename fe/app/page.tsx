@@ -74,7 +74,7 @@ export default function Home() {
               </Button>
             </Link>
 
-            <Link href="/game-board" className="w-full">
+            <Link href="/ai-game-board" className="w-full">
               <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
                 <Monitor className="h-5 w-5" />
                 <span className="text-lg">Chơi với máy</span>

@@ -1,93 +1,110 @@
 import { useState, useEffect } from "react";
-import { useGameState } from "./use-game-state";
-import { getAIMove, AIMove } from "../services/ai-service";
 import { useWebSocket } from "@/lib/websocket-context";
+import { useAuth } from "@/lib/api/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { parseBoardState } from "./use-game-state";
 
-export function useAIGame() {
-  const {
-    players,
-    pieces,
-    turn,
-    isLoading,
-    makeMove,
-    matchId,
-    player1,
-    player2,
-    initialBoardState,
-    setPieces,
-    setTurn,
-  } = useGameState();
+export interface Player {
+  id: string;
+  username: string;
+  color: "r" | "b";
+  elo: number;
+}
 
+export interface Piece {
+  type: string;
+  color: "r" | "b";
+  x: number;
+  y: number;
+}
+
+export const useAIGame = () => {
+  const { stompClient, isConnected } = useWebSocket();
+  const { user } = useAuth();
+  const router = useRouter();
+
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [player1, setPlayer1] = useState<Player | null>(null);
+  const [player2, setPlayer2] = useState<Player | null>(null);
+  const [initialBoardState, setInitialBoardState] = useState<string>(
+    "rheakaehr..........c.....c.p.p.p.p.p..................P.P.P.P.P.C.....C..........RHEAKAEHR"
+  );
+  const [pieces, setPieces] = useState<Piece[]>([]);
+  const [turn, setTurn] = useState<"r" | "b">("r");
+  const [isLoading, setIsLoading] = useState(true);
   const [isAITurn, setIsAITurn] = useState(false);
   const [aiDifficulty, setAIDifficulty] = useState<"easy" | "medium" | "hard">(
     "medium"
   );
-  const { stompClient } = useWebSocket();
 
-  // Function to handle AI's move
-  const handleAIMove = async () => {
-    if (!isAITurn || !matchId) return;
+  useEffect(() => {
+    if (!stompClient || !isConnected || !user) return;
 
-    try {
-      // Get current board state
-      const boardState = pieces.reduce((acc: string[], piece) => {
-        const idx = piece.y * 9 + piece.x;
-        acc[idx] =
-          piece.color === "r"
-            ? piece.type.toLowerCase()
-            : piece.type.toUpperCase();
-        return acc;
-      }, Array(90).fill("."));
+    // Subscribe to AI game response
+    const subscription = stompClient.subscribe(
+      `/user/${user.username}/queue/game.withAI`,
+      (message) => {
+        const data = JSON.parse(message.body);
+        if (data.type === "GAME_STARTED") {
+          setMatchId(data.matchId);
+          setPlayer1(data.player1);
+          setPlayer2(data.player2);
+          setInitialBoardState(data.initialBoardState);
+          setTurn(data.currentTurn);
+          setPieces(parseBoardState(data.initialBoardState));
+          setIsLoading(false);
 
-      // Get AI's move
-      const aiMove = await getAIMove(boardState.join(""), aiDifficulty);
-
-      // Make the move
-      if (stompClient?.connected) {
-        makeMove(
-          {
-            fromX: aiMove.fromX,
-            fromY: aiMove.fromY,
-            toX: aiMove.toX,
-            toY: aiMove.toY,
-            pieceType: aiMove.pieceType,
-            color: aiMove.color,
-            moveDescription: `${aiMove.pieceType} ${aiMove.fromX},${aiMove.fromY} -> ${aiMove.toX},${aiMove.toY}`,
-            boardState: boardState.join(""),
-            playerId: player2?.id,
-          },
-          matchId
-        );
+          // Navigate to AI game board (stay on this page, as it's already the AI game board)
+          // router.push(`/game-board?matchId=${data.matchId}`); // Removed navigation
+          // Instead, just update the matchId state here
+          // No explicit push needed as we are already on the AI game board
+        }
       }
-    } catch (error) {
-      console.error("Error making AI move:", error);
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [stompClient, isConnected, user, router]);
+
+  const startAIGame = () => {
+    console.log("[FE-Debug] Inside startAIGame function.");
+    if (!stompClient || !isConnected || !user) {
+      console.log(
+        "[FE-Debug] startAIGame: Conditions not met. stompClient: ",
+        !!stompClient,
+        ", isConnected: ",
+        isConnected,
+        ", user: ",
+        !!user
+      );
+      return;
     }
+
+    console.log(
+      "[FE-Debug] Attempting to publish to /app/game.withAI with username: ",
+      user.username
+    );
+    stompClient.publish({
+      destination: "/app/game.withAI",
+      body: user.username,
+    });
+    console.log("[FE-Debug] Published message to /app/game.withAI");
   };
 
-  // Watch for turn changes to trigger AI moves
-  useEffect(() => {
-    if (turn === "b" && player2?.isAI) {
-      setIsAITurn(true);
-      handleAIMove();
-    } else {
-      setIsAITurn(false);
-    }
-  }, [turn, player2?.isAI]);
-
   return {
-    players,
-    pieces,
-    turn,
-    isLoading,
-    makeMove,
     matchId,
     player1,
     player2,
     initialBoardState,
+    pieces,
     setPieces,
+    turn,
     setTurn,
+    isLoading,
     isAITurn,
     aiDifficulty,
     setAIDifficulty,
+    startAIGame,
   };
-}
+};

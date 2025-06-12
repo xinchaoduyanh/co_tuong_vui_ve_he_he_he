@@ -27,6 +27,7 @@ import com.chessxiangqi.xiangqi_backend.model.Player;
 import com.chessxiangqi.xiangqi_backend.model.PlayerMatch;
 import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
 import com.chessxiangqi.xiangqi_backend.repository.PlayerMatchRepository;
+import com.chessxiangqi.xiangqi_backend.service.AIGameService;
 import com.chessxiangqi.xiangqi_backend.service.ChallengeService;
 import com.chessxiangqi.xiangqi_backend.service.MatchService;
 import com.chessxiangqi.xiangqi_backend.service.MoveService;
@@ -68,6 +69,9 @@ public class WebSocketController {
 
     @Autowired
     private ChallengeService challengeService;
+
+    @Autowired
+    private AIGameService aiGameService;
 
     @MessageMapping("/user.connect")
     public void connectUser(@Payload String username, SimpMessageHeaderAccessor headerAccessor) {
@@ -143,6 +147,11 @@ public class WebSocketController {
                     "/queue/challenge",
                     errorResponse
                 );
+                messagingTemplate.convertAndSendToUser(
+                    targetUsername,
+                    "/queue/challenge",
+                    errorResponse
+                );
                 return;
             }
             var player1 = player1Opt.get();
@@ -180,6 +189,9 @@ public class WebSocketController {
             Map<String, Object> response = new HashMap<>();
             response.put("type", "CHALLENGE_ACCEPTED");
             response.put("from", targetUsername);
+            response.put("message", "Lời mời đã được chấp nhận. Đang khởi tạo trận đấu.");
+            response.put("accepterUsername", targetUsername);
+            response.put("challengerUsername", challengerUsername);
             response.put("matchId", match.getId());
             response.put("player1", Map.of(
                 "id", player1.getId(),
@@ -196,13 +208,23 @@ public class WebSocketController {
             response.put("currentTurn", "r");
             response.put("initialBoardState", initialMove.getBoardState());
 
-            // 8. Gửi thông báo cho người thách đấu (challenger)
-            log.info("[BE-9] Sending challenge accepted notification to challenger");
+            // 8. Gửi thông báo cho cả hai người chơi
+            log.info("[BE-9] Sending challenge accepted notification to both players");
+            log.info("[BE-9.1] Notification content: {}", response);
+            
             messagingTemplate.convertAndSendToUser(
                 challengerUsername,
                 "/queue/challenge",
                 response
             );
+            log.info("[BE-9.2] Sent to challenger: {}", challengerUsername);
+            
+            messagingTemplate.convertAndSendToUser(
+                targetUsername,
+                "/queue/challenge",
+                response
+            );
+            log.info("[BE-9.3] Sent to target: {}", targetUsername);
 
             // 9. Gửi danh sách online mới
             messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
@@ -216,6 +238,11 @@ public class WebSocketController {
             errorResponse.put("message", "Không thể tạo trận đấu");
             messagingTemplate.convertAndSendToUser(
                 challengerUsername,
+                "/queue/challenge",
+                errorResponse
+            );
+            messagingTemplate.convertAndSendToUser(
+                targetUsername,
                 "/queue/challenge",
                 errorResponse
             );
@@ -301,13 +328,30 @@ public class WebSocketController {
                 response
             );
 
-            // Sau khi nhận boardState mới
+            // 5. Kiểm tra nếu là lượt của AI
+            Optional<Match> currentMatchOpt = matchService.getMatchById(matchId);
+            if (currentMatchOpt.isPresent()) {
+                Match currentMatch = currentMatchOpt.get();
+                if (currentMatch.getPlayer2().getUsername().equals("da1") && moveEntity.getNextTurn().equals("b")) {
+                    // Xử lý nước đi của AI
+                    Move aiMove = aiGameService.processAIMove(matchId, boardState, moveEntity.getNextTurn());
+                    if (aiMove != null) {
+                        // Gửi nước đi của AI
+                        Map<String, Object> aiResponse = new HashMap<>();
+                        aiResponse.put("boardState", aiMove.getBoardState());
+                        aiResponse.put("nextTurn", aiMove.getNextTurn());
+                        messagingTemplate.convertAndSend(
+                            "/topic/match." + matchId + ".board",
+                            aiResponse
+                        );
+                    }
+                }
+            }
+
+            // 6. Kiểm tra kết thúc game
             boolean redKingAlive = boardState.contains("k");
             boolean blackKingAlive = boardState.contains("K");
             
-            log.info("Checking king status - Red king alive: {}, Black king alive: {}", redKingAlive, blackKingAlive);
-            log.info("Current board state: {}", boardState);
-
             if (!redKingAlive || !blackKingAlive) {
                 log.info("Game over detected - Red king: {}, Black king: {}", redKingAlive, blackKingAlive);
                 Optional<Match> matchOpt = matchService.getMatchById(matchId);
@@ -623,6 +667,106 @@ public class WebSocketController {
             response.put("matchId", request.getMatchId());
             
             messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".drawResponse", response);
+        }
+    }
+
+    @MessageMapping("/game.withAI")
+    public void startGameWithAI(@Payload String username, SimpMessageHeaderAccessor headerAccessor) {
+        log.info("[BE-AI] Starting game with AI for player: {}", username);
+        
+        try {
+            // 1. Lấy thông tin người chơi
+            Optional<Player> playerOpt = playerService.getPlayerByUsername(username);
+            if (playerOpt.isEmpty()) {
+                log.error("[BE-AI] Player not found: {}", username);
+                Map<String, String> errorResponse = new HashMap<>();
+                errorResponse.put("type", "ERROR");
+                errorResponse.put("message", "Không tìm thấy người chơi");
+                messagingTemplate.convertAndSendToUser(
+                    username,
+                    "/queue/game.withAI",
+                    errorResponse
+                );
+                return;
+            }
+            Player player = playerOpt.get();
+
+            // 2. Lấy thông tin AI player
+            Optional<Player> aiPlayerOpt = playerService.getPlayerByUsername("da1");
+            if (aiPlayerOpt.isEmpty()) {
+                log.error("[BE-AI] AI player not found");
+                Map<String, String> errorResponse = new HashMap<>();
+                errorResponse.put("type", "ERROR");
+                errorResponse.put("message", "Không thể tạo trận đấu với AI");
+                messagingTemplate.convertAndSendToUser(
+                    username,
+                    "/queue/game.withAI",
+                    errorResponse
+                );
+                return;
+            }
+            Player aiPlayer = aiPlayerOpt.get();
+
+            // 3. Tạo match mới
+            Match match = new Match();
+            match.setId(UUID.randomUUID().toString());
+            match.setPlayer1(player);
+            match.setPlayer2(aiPlayer);
+            match.setCreatedAt(new Date());
+            match = matchService.createMatch(match);
+
+            // 4. Tạo move đầu tiên với trạng thái bàn cờ ban đầu
+            Move initialMove = new Move();
+            initialMove.setMatchId(match.getId());
+            initialMove.setTurnNumber(0);
+            String initialBoardState = "rheakaehr..........c.....c.p.p.p.p.p..................P.P.P.P.P.C.....C..........RHEAKAEHR";
+            initialMove.setBoardState(initialBoardState);
+            initialMove.setNextTurn("r");
+            moveService.saveMove(initialMove);
+
+            // 5. Tạo PlayerMatch cho cả hai người chơi
+            playerMatchService.createPlayerMatch(match.getPlayer1(), match.getPlayer2(), match);
+            playerMatchService.createPlayerMatch(match.getPlayer2(), match.getPlayer1(), match);
+
+            // 6. Cập nhật trạng thái người chơi thành IN_GAME
+            playerService.updatePlayerStatus(username, PlayerStatus.IN_GAME);
+
+            // 7. Gửi thông tin match cho người chơi
+            Map<String, Object> response = new HashMap<>();
+            response.put("type", "GAME_STARTED");
+            response.put("matchId", match.getId());
+            response.put("player1", Map.of(
+                "id", player.getId(),
+                "username", player.getUsername(),
+                "color", "r",
+                "elo", player.getElo()
+            ));
+            response.put("player2", Map.of(
+                "id", aiPlayer.getId(),
+                "username", aiPlayer.getUsername(),
+                "color", "b",
+                "elo", aiPlayer.getElo()
+            ));
+            response.put("currentTurn", "r");
+            response.put("initialBoardState", initialBoardState);
+
+            messagingTemplate.convertAndSendToUser(
+                username,
+                "/queue/game.withAI",
+                response
+            );
+
+            log.info("[BE-AI] Game with AI started successfully for player: {}", username);
+        } catch (Exception e) {
+            log.error("[BE-AI] Error starting game with AI: {}", e.getMessage());
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("type", "ERROR");
+            errorResponse.put("message", "Lỗi khi tạo trận đấu với AI");
+            messagingTemplate.convertAndSendToUser(
+                username,
+                "/queue/game.withAI",
+                errorResponse
+            );
         }
     }
 } 
