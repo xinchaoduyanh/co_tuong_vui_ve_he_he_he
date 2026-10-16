@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api/config";
 
 import { useState, useEffect } from "react";
 
@@ -40,8 +41,8 @@ export function useMatchHistory(
         setIsLoading(true);
         const endpoint =
           type === "recent"
-            ? `http://localhost:8080/api/match-history/recent/${username}`
-            : `http://localhost:8080/api/match-history/opponent-rank/${username}`;
+            ? `${API_BASE_URL}/api/match-history/recent/${username}`
+            : `${API_BASE_URL}/api/match-history/opponent-rank/${username}`;
 
         const res = await fetch(endpoint);
         if (!res.ok) throw new Error("Không lấy được lịch sử đấu");

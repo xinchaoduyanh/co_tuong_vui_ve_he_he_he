@@ -12,6 +12,7 @@ import { Client } from "@stomp/stompjs";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./api/context/AuthContext";
 import { useNotification } from "@/components/NotificationProvider";
+import { WS_BASE_URL } from "@/lib/api/config";
 
 interface WebSocketContextType {
   stompClient: Client | null;
@@ -38,7 +39,6 @@ export const WebSocketContext = createContext<WebSocketContextType>({
   cancelChallenge: () => {},
 });
 
-const WS_URL = "ws://localhost:8080/ws";
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -178,15 +178,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
         case "CHALLENGE_ACCEPTED": {
           setPendingChallenges([]);
-          // Lưu thông tin trận để các màn hình cũ vẫn đọc được; bàn cờ tự tải lại từ server
-          localStorage.setItem("matchId", String(data.matchId || ""));
-          localStorage.setItem("player1", JSON.stringify(data.player1 || {}));
-          localStorage.setItem("player2", JSON.stringify(data.player2 || {}));
-          localStorage.setItem("currentTurn", String(data.currentTurn || ""));
-          localStorage.setItem(
-            "initialBoardState",
-            String(data.initialBoardState || "")
-          );
           const isChallenger = data.challengerUsername === me;
           n.showNotification({
             severity: "success",
@@ -205,7 +196,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     };
 
     const client = new Client({
-      brokerURL: `${WS_URL}?username=${encodeURIComponent(me)}`,
+      brokerURL: `${WS_BASE_URL}?username=${encodeURIComponent(me)}`,
       connectHeaders: { username: me },
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,

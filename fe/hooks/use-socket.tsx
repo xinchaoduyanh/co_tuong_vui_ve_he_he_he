@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
 import { Client } from "@stomp/stompjs";
+import { API_BASE_URL, WS_BASE_URL } from "@/lib/api/config";
 
 let socket: Socket | null = null;
 let stompClient: Client | null = null;
@@ -10,7 +11,7 @@ export function useSocket() {
 
   useEffect(() => {
     if (!socket) {
-      socket = io("http://localhost:8080"); // Adjust your backend URL/port
+      socket = io(API_BASE_URL);
     }
     socketRef.current = socket;
     return () => {
@@ -32,7 +33,7 @@ export function useStompClient() {
     }
 
     const client = new Client({
-      brokerURL: "ws://localhost:8080/ws",
+      brokerURL: WS_BASE_URL,
       debug: (str) => {
         console.log("STOMP Debug:", str);
       },

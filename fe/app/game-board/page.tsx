@@ -24,6 +24,7 @@ import {
   GameResultView,
 } from "@/components/game-result-overlay";
 import { LeaveConfirmDialog } from "@/components/leave-confirm-dialog";
+import { clearMatchStorage } from "@/lib/match-storage";
 
 const redSymbols = {
   G: "帥",
@@ -177,13 +178,6 @@ export default function GameBoard() {
           detail: "Chiếu bí! Trận đấu kết thúc.",
         });
       }
-      // Lưu lại trạng thái mới vào localStorage
-      if (data.boardState) {
-        localStorage.setItem("initialBoardState", data.boardState);
-      }
-      if (data.nextTurn) {
-        localStorage.setItem("currentTurn", data.nextTurn);
-      }
     };
 
     const subscription = stompClient.subscribe(
@@ -300,6 +294,7 @@ export default function GameBoard() {
           opponentName: (isRed ? data.player2?.username : data.player1?.username) ?? null,
         });
         setIsCheck(false);
+        clearMatchStorage();
       }
     });
     return () => sub.unsubscribe();
@@ -322,6 +317,7 @@ export default function GameBoard() {
       opponentEloChange: null,
       opponentName: null,
     });
+    clearMatchStorage();
   }, [snapshot, user?.id]);
 
   // Rời trận: nếu đang chơi thì hỏi xác nhận, đồng ý thì đầu hàng rồi mới rời
