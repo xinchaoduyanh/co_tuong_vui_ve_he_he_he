@@ -8,6 +8,7 @@ import { useWebSocket } from "@/lib/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOnlinePlayers } from "@/lib/api/hooks/use-online-players";
+import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 
 type OnlinePlayer = {
   id: string;
@@ -28,6 +29,7 @@ export default function OnlinePlayersPage() {
   } = useWebSocket();
   const user = useAuth();
   const router = useRouter();
+  const activeMatch = useActiveMatch();
 
   // Khi apiOnlineUsers thay đổi (lần đầu vào trang), cập nhật danh sách
   useEffect(() => {
@@ -64,6 +66,12 @@ export default function OnlinePlayersPage() {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
+      {activeMatch && (
+        <div className="flex items-center justify-between rounded-lg border border-red-300 bg-red-50 p-3 text-red-800">
+          <span>Bạn đang có trận với <strong>{activeMatch.opponent}</strong>, chưa thể tìm trận khác.</span>
+          <Button size="sm" onClick={() => router.push(`/game-board?matchId=${activeMatch.matchId}`)}>Vào lại trận</Button>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Người chơi online</CardTitle>
@@ -114,7 +122,8 @@ export default function OnlinePlayersPage() {
                         onClick={() => handleChallenge(u.username)}
                         size="sm"
                         className="bg-amber-600 hover:bg-amber-700 text-white"
-                        disabled={u.status === "IN_GAME"}
+                        disabled={u.status === "IN_GAME" || !!activeMatch}
+                        title={activeMatch ? "Bạn đang trong trận, hãy vào lại trận trước" : undefined}
                       >
                         {u.status === "IN_GAME" ? "Đang chơi" : "Thách đấu"}
                       </Button>

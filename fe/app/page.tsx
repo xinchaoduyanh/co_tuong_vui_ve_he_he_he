@@ -16,9 +16,11 @@ import {
 import Link from "next/link";
 import { handleLogout } from "@/lib/api/context/AuthContext";
 import { User } from "@/lib/types/user";
+import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 
 export default function Home() {
   const router = useRouter();
+  const activeMatch = useActiveMatch();
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -67,17 +69,17 @@ export default function Home() {
       <Card className="w-full max-w-md bg-white/80 backdrop-blur-sm shadow-lg">
         <CardContent className="p-6">
           <div className="grid gap-4">
-            <Link href="/thach-dau" className="w-full">
+            <Link href={activeMatch ? `/game-board?matchId=${activeMatch.matchId}` : "/thach-dau"} className="w-full">
               <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
                 <Users className="h-5 w-5" />
-                <span className="text-lg">Thách đấu</span>
+                <span className="text-lg">{activeMatch ? "Vào lại trận đang chơi" : "Thách đấu"}</span>
               </Button>
             </Link>
 
-            <Link href="/ai-game-board" className="w-full">
+            <Link href={activeMatch ? `/game-board?matchId=${activeMatch.matchId}` : "/ai-game-board"} className="w-full">
               <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
                 <Monitor className="h-5 w-5" />
-                <span className="text-lg">Chơi với máy</span>
+                <span className="text-lg">{activeMatch ? "Vào lại trận đang chơi" : "Chơi với máy"}</span>
               </Button>
             </Link>
 
