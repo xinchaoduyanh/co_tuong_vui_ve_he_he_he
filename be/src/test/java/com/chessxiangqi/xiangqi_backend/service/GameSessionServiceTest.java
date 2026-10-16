@@ -254,6 +254,20 @@ class GameSessionServiceTest {
     }
 
     @Test
+    void acceptedDrawRecordsDrawForBothPlayersWithoutEloChange() {
+        startWith(INITIAL_BOARD, "r");
+        service.acceptDraw("m1", "p2");
+
+        assertEquals("DRAW_AGREED", match.getResult());
+        assertNull(match.getWinner());
+        ArgumentCaptor<Integer> changes = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> results = ArgumentCaptor.forClass(String.class);
+        verify(playerService, times(2)).applyMatchResult(any(), changes.capture(), results.capture());
+        assertEquals(List.of("DRAW", "DRAW"), results.getAllValues());
+        assertEquals(List.of(0, 0), changes.getAllValues());
+    }
+
+    @Test
     void surrenderGivesWinToOpponent() {
         startWith(INITIAL_BOARD, "r");
         service.surrender("m1", "p1");
