@@ -19,6 +19,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { useBoardLogic } from "@/lib/api/hooks/use-board-logic";
 import { useNotification } from "@/components/NotificationProvider";
+import {
+  GameResultOverlay,
+  GameResultView,
+} from "@/components/game-result-overlay";
+import { LeaveConfirmDialog } from "@/components/leave-confirm-dialog";
 
 const redSymbols = {
   G: "帥",
@@ -87,6 +92,11 @@ export default function GameBoard() {
     receivedAt: number;
   } | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
+  // Kết quả trận: có giá trị khi trận đã kết thúc (hiện overlay, không cần xác nhận khi rời)
+  const [gameResult, setGameResult] = useState<GameResultView | null>(null);
+  const gameOver = gameResult !== null;
+  // Hành động rời trận đang chờ người chơi xác nhận
+  const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
 
   const {
     matchId,
@@ -273,38 +283,90 @@ export default function GameBoard() {
           localStorage.setItem("user", JSON.stringify(updatedUser));
         }
 
-        // Hiển thị thông báo kết quả
-        const isWinner =
-          (data.player1 && data.player1.id === myId && data.winner === "red") ||
-          (data.player2 && data.player2.id === myId && data.winner === "black");
-        const myEloChange =
-          data.player1 && data.player1.id === myId
-            ? data.player1EloChange
-            : data.player2EloChange;
-        const opponentEloChange =
-          data.player1 && data.player1.id === myId
-            ? data.player2EloChange
-            : data.player1EloChange;
-
-        showNotification({
-          severity: isWinner ? "success" : "info",
-          summary: "Kết thúc trận đấu",
-          detail: `${
-            isWinner ? "Bạn thắng" : "Bạn thua"
-          }\nĐiểm thay đổi của bạn: ${
-            myEloChange > 0 ? "+" : ""
-          }${myEloChange}\nĐiểm thay đổi của đối thủ: ${
-            opponentEloChange > 0 ? "+" : ""
-          }${opponentEloChange}`,
-          life: 5000,
+        const isRed = data.player1 && data.player1.id === myId;
+        const myEloChange = isRed ? data.player1EloChange : data.player2EloChange;
+        const opponentEloChange = isRed ? data.player2EloChange : data.player1EloChange;
+        const outcome =
+          data.winner === "DRAW"
+            ? "draw"
+            : (data.winner === "red") === Boolean(isRed)
+            ? "win"
+            : "lose";
+        setGameResult({
+          outcome,
+          reason: data.reason ?? null,
+          myEloChange,
+          opponentEloChange,
+          opponentName: (isRed ? data.player2?.username : data.player1?.username) ?? null,
         });
-
-        // Điều hướng về Home hoặc trang kết quả
-        router.push("/");
+        setIsCheck(false);
       }
     });
     return () => sub.unsubscribe();
   }, [stompClient, isConnected, matchId, user, router, showNotification]);
+
+  // Trận đã kết thúc từ trước (mở lại link): hiện kết quả từ snapshot
+  useEffect(() => {
+    if (!snapshot || snapshot.status !== "ENDED") return;
+    const isRed = snapshot.players.red?.id === user?.id;
+    const outcome =
+      snapshot.winner === "DRAW" || !snapshot.winner
+        ? "draw"
+        : (snapshot.winner === "red") === isRed
+        ? "win"
+        : "lose";
+    setGameResult({
+      outcome,
+      reason: snapshot.endReason,
+      myEloChange: null,
+      opponentEloChange: null,
+      opponentName: null,
+    });
+  }, [snapshot, user?.id]);
+
+  // Rời trận: nếu đang chơi thì hỏi xác nhận, đồng ý thì đầu hàng rồi mới rời
+  const requestLeave = (action: () => void) => {
+    if (gameOver) {
+      action();
+      return;
+    }
+    setLeaveAction(() => action);
+  };
+
+  const confirmLeave = () => {
+    const action = leaveAction;
+    setLeaveAction(null);
+    if (matchId && stompClient?.connected && user?.id) {
+      stompClient.publish({
+        destination: "/app/game.surrender",
+        body: JSON.stringify({ matchId, playerId: user.id }),
+      });
+    }
+    action?.();
+  };
+
+  // Đóng tab / tải lại giữa trận: trình duyệt hiện hộp xác nhận mặc định (không tính là đầu hàng)
+  useEffect(() => {
+    if (gameOver) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [gameOver]);
+
+  // Nút Back của trình duyệt: giữ lại trang và hỏi xác nhận
+  useEffect(() => {
+    if (gameOver) return;
+    window.history.pushState({ inGame: true }, "");
+    const onPopState = () => {
+      window.history.pushState({ inGame: true }, "");
+      setLeaveAction(() => () => router.push("/"));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [gameOver, router]);
 
   // Hiển thị thông báo chào mừng khi vào game
   useEffect(() => {
@@ -695,20 +757,20 @@ export default function GameBoard() {
     <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
       <div className="w-full max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <Link href="/">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="bg-white/80 hover:bg-white shadow-sm"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="bg-white/80 hover:bg-white shadow-sm"
+            aria-label="Rời trận"
+            onClick={() => requestLeave(() => router.push("/"))}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
           <h1 className="text-2xl font-bold text-amber-800 bg-white/80 px-4 py-1 rounded-lg shadow-sm">
             Cờ Tướng
           </h1>
           <Button
-            onClick={() => router.push("/ai-game-board")}
+            onClick={() => requestLeave(() => router.push("/ai-game-board"))}
             className="flex items-center gap-2"
             variant="outline"
           >
@@ -1148,6 +1210,20 @@ export default function GameBoard() {
           {formatClock(remainingOf("b"))}
         </span>
       </div>
+
+      {gameResult && (
+        <GameResultOverlay
+          result={gameResult}
+          onHome={() => router.push("/")}
+          onHistory={() => router.push("/lich-su-dau")}
+        />
+      )}
+
+      <LeaveConfirmDialog
+        open={leaveAction !== null}
+        onStay={() => setLeaveAction(null)}
+        onLeave={confirmLeave}
+      />
 
       {/* Surrender Confirmation Dialog */}
       {showSurrenderDialog && (
