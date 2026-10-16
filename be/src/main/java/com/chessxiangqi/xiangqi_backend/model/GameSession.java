@@ -1,5 +1,7 @@
 package com.chessxiangqi.xiangqi_backend.model;
 
+import com.chessxiangqi.xiangqi_backend.dto.PlayerPublicDto;
+
 import lombok.Data;
 
 /** Trạng thái một trận đang diễn ra, giữ trên server (nguồn sự thật cho luật, lượt và kết thúc). */
@@ -29,4 +31,8 @@ public class GameSession {
     private Long redDisconnectedAt;
     private Long blackDisconnectedAt;
     private String lastMoveDescription;
+
+    // Thông tin hai người chơi giữ sẵn để snapshot không phải hỏi DB; làm mới khi trận kết thúc
+    private PlayerPublicDto redInfo;
+    private PlayerPublicDto blackInfo;
 }

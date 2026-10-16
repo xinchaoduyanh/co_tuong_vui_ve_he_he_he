@@ -71,7 +71,7 @@ public class PlayerService {
             String onlineList = onlinePlayers.stream()
                 .map(p -> String.format("[%s] %s", p.getStatus(), p.getUsername()))
                 .collect(Collectors.joining(", "));
-            log.info("[STATUS] Current online players: {}", onlineList);
+            log.debug("[STATUS] Current online players: {}", onlineList);
         }
     }
 
@@ -106,13 +106,13 @@ public class PlayerService {
 
     public boolean canBeChallenged(String username) {
         OnlinePlayer onlinePlayer = onlinePlayersByUsername.get(username);
-        log.info("[BE-31] Checking if player can be challenged - Username: {}", username);
-        log.info("[BE-31.1] Player exists in online list: {}", onlinePlayer != null);
+        log.debug("[BE-31] Checking if player can be challenged - Username: {}", username);
+        log.debug("[BE-31.1] Player exists in online list: {}", onlinePlayer != null);
         if (onlinePlayer != null) {
-            log.info("[BE-31.2] Player status: {}", onlinePlayer.getStatus());
+            log.debug("[BE-31.2] Player status: {}", onlinePlayer.getStatus());
         }
         boolean canBeChallenged = onlinePlayer != null && onlinePlayer.getStatus() == PlayerStatus.ONLINE;
-        log.info("[BE-31.3] Can be challenged: {}", canBeChallenged);
+        log.debug("[BE-31.3] Can be challenged: {}", canBeChallenged);
         return canBeChallenged;
     }
 
@@ -122,7 +122,7 @@ public class PlayerService {
         if (onlinePlayer != null) {
             PlayerStatus oldStatus = onlinePlayer.getStatus();
             onlinePlayer.setStatus(status);
-            log.info("[STATUS] Updated in-memory status - [{}] {} (was: {})", status, username, oldStatus);
+            log.debug("[STATUS] Updated in-memory status - [{}] {} (was: {})", status, username, oldStatus);
         } else {
             log.warn("[STATUS] Cannot update status - Player not found in online list: {}", username);
         }
@@ -139,7 +139,7 @@ public class PlayerService {
     public List<OnlinePlayer> getOnlinePlayers() {
         List<OnlinePlayer> players = onlinePlayersByUsername.values().stream()
             .collect(Collectors.toList());
-        log.info("[STATUS] Current online players: {}", 
+        log.debug("[STATUS] Current online players: {}", 
             players.stream()
                 .map(p -> String.format("[%s] %s", p.getStatus(), p.getUsername()))
                 .collect(Collectors.joining(", ")));

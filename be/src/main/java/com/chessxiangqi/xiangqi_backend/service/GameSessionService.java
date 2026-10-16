@@ -66,6 +66,9 @@ public class GameSessionService {
     // Trận đang chơi, theo matchId
     private final Map<String, GameSession> sessions = new ConcurrentHashMap<>();
 
+    // Những người đã tra DB tìm trận dở từ lần chạy trước (chỉ tra một lần mỗi người)
+    private final java.util.Set<String> dbChecked = ConcurrentHashMap.newKeySet();
+
     // Nguồn thời gian; test có thể thay để giả lập đồng hồ
     private LongSupplier clock = System::currentTimeMillis;
 
@@ -82,18 +85,33 @@ public class GameSessionService {
         if (cached != null) {
             return Optional.of(cached);
         }
-        Optional<Match> matchOpt = matchService.getMatchById(matchId);
-        if (matchOpt.isEmpty()) {
-            return Optional.empty();
+        return matchService.getMatchById(matchId).flatMap(this::loadSession);
+    }
+
+    /** Trận vừa tạo: đưa vào bộ nhớ ngay (không cần đọc lại DB) và đồng hồ bắt đầu từ lúc này. */
+    public GameSession registerNewMatch(Match match, Move initialMove) {
+        GameSession session = buildSession(match, initialMove);
+        sessions.put(match.getId(), session);
+        return session;
+    }
+
+    // Nạp phiên từ một Match đã có trong tay (tốn thêm một truy vấn để lấy nước đi cuối)
+    private Optional<GameSession> loadSession(Match match) {
+        GameSession cached = sessions.get(match.getId());
+        if (cached != null) {
+            return Optional.of(cached);
         }
-        Match match = matchOpt.get();
         Move latest;
         try {
-            latest = moveService.getLatestMove(matchId);
+            latest = moveService.getLatestMove(match.getId());
         } catch (RuntimeException e) {
             return Optional.empty();
         }
+        sessions.putIfAbsent(match.getId(), buildSession(match, latest));
+        return Optional.of(sessions.get(match.getId()));
+    }
 
+    private GameSession buildSession(Match match, Move latest) {
         GameSession session = new GameSession(
             match.getId(),
             match.getPlayer1().getId(), match.getPlayer1().getUsername(),
@@ -109,11 +127,12 @@ public class GameSessionService {
         session.setEnded(match.getEndDate() != null);
         session.setEndReason(match.getResult());
         session.setLastMoveDescription(latest.getMoveDescription());
+        session.setRedInfo(PlayerPublicDto.from(match.getPlayer1()));
+        session.setBlackInfo(PlayerPublicDto.from(match.getPlayer2()));
         if (match.getWinner() != null) {
             session.setWinnerColor(match.getWinner().getId().equals(match.getPlayer1().getId()) ? 'r' : 'b');
         }
-        sessions.putIfAbsent(matchId, session);
-        return Optional.of(sessions.get(matchId));
+        return session;
     }
 
     /** Xử lý nước đi của {@code username} trong trận {@code matchId}. Ném {@link GameActionException} nếu sai. */
@@ -289,14 +308,15 @@ public class GameSessionService {
         playerService.updatePlayerStatus(session.getRedUsername(), PlayerStatus.ONLINE);
         playerService.updatePlayerStatus(session.getBlackUsername(), PlayerStatus.ONLINE);
 
-        Player redAfter = playerService.getPlayerById(red.getId()).orElse(red);
-        Player blackAfter = playerService.getPlayerById(black.getId()).orElse(black);
+        // red và black đã được cập nhật tại chỗ bởi applyMatchResult, không cần đọc lại DB
+        session.setRedInfo(PlayerPublicDto.from(red));
+        session.setBlackInfo(PlayerPublicDto.from(black));
         Map<String, Object> endGame = new HashMap<>();
         endGame.put("type", "END_GAME");
         endGame.put("reason", reason);
         endGame.put("winner", winnerColor == null ? "DRAW" : (winnerColor == 'r' ? "red" : "black"));
-        endGame.put("player1", PlayerPublicDto.from(redAfter));
-        endGame.put("player2", PlayerPublicDto.from(blackAfter));
+        endGame.put("player1", session.getRedInfo());
+        endGame.put("player2", session.getBlackInfo());
         endGame.put("player1EloChange", redDelta);
         endGame.put("player2EloChange", blackDelta);
         messagingTemplate.convertAndSend("/topic/match." + session.getMatchId() + ".end", endGame);
@@ -399,8 +419,8 @@ public class GameSessionService {
             data.put("winner", session.getWinnerColor() == 'r' ? "red" : "black");
         }
         Map<String, Object> players = new HashMap<>();
-        players.put("red", playerDto(session.getRedPlayerId()));
-        players.put("black", playerDto(session.getBlackPlayerId()));
+        players.put("red", session.getRedInfo());
+        players.put("black", session.getBlackInfo());
         data.put("players", players);
         data.put("boardState", session.getBoardState());
         data.put("turn", String.valueOf(session.getTurn()));
@@ -416,16 +436,38 @@ public class GameSessionService {
         return data;
     }
 
-    private PlayerPublicDto playerDto(String playerId) {
-        return playerService.getPlayerById(playerId).map(PlayerPublicDto::from).orElse(null);
+    /** Trận người-người đang chơi của người chơi (theo id). */
+    public Optional<GameSession> findActiveSessionByPlayerId(String playerId) {
+        return findActive(playerId, false);
     }
 
-    /** Trận người-người đang chơi của người chơi (nếu có), nạp từ bộ nhớ hoặc DB. */
-    public Optional<GameSession> findActiveSessionByPlayerId(String playerId) {
+    private Optional<GameSession> findActiveSession(String username) {
+        return findActive(username, true);
+    }
+
+    /**
+     * Tìm trong bộ nhớ trước (trận tạo từ lúc server chạy đều có ở đây). Chỉ hỏi DB đúng một lần cho
+     * mỗi người sau khi khởi động, để vớt trận còn dở từ lần chạy trước.
+     */
+    private Optional<GameSession> findActive(String who, boolean byUsername) {
+        for (GameSession session : sessions.values()) {
+            if (session.isEnded()) {
+                continue;
+            }
+            String red = byUsername ? session.getRedUsername() : session.getRedPlayerId();
+            String black = byUsername ? session.getBlackUsername() : session.getBlackPlayerId();
+            if (who.equals(red) || who.equals(black)) {
+                return Optional.of(session);
+            }
+        }
+        if (!dbChecked.add((byUsername ? "u:" : "i:") + who)) {
+            return Optional.empty();
+        }
         Date since = new Date(System.currentTimeMillis() - ACTIVE_WINDOW.toMillis());
-        return matchService.findActiveByPlayerId(playerId, since).stream()
-            .findFirst()
-            .flatMap(match -> getSession(match.getId()));
+        List<Match> found = byUsername
+            ? matchService.findActiveByUsername(who, since)
+            : matchService.findActiveByPlayerId(who, since);
+        return found.stream().findFirst().flatMap(this::loadSession);
     }
 
     /** Người chơi kết nối (hoặc kết nối lại): đặt trạng thái đang chơi nếu còn trận. */
@@ -460,11 +502,6 @@ public class GameSessionService {
                 }
             }
         });
-    }
-
-    private Optional<GameSession> findActiveSession(String username) {
-        return playerService.getPlayerByUsername(username)
-            .flatMap(player -> findActiveSessionByPlayerId(player.getId()));
     }
 
     /** Bên mất kết nối quá {@link #DISCONNECT_GRACE_MS}, hoặc null nếu không có bên nào. */

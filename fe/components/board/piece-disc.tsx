@@ -1,10 +1,12 @@
+import { memo } from "react";
+
 // Quân cờ truyền thống: đĩa gỗ tiện sáng màu, chữ khắc đỏ (bên đỏ) hoặc mực đen (bên đen).
 // Phải đặt bên trong <svg> có BoardSurface (dùng chung gradient #xq-disc và filter #xq-soft).
 
 const RED_SYMBOLS: Record<string, string> = { G: "帥", A: "仕", E: "相", H: "傌", R: "俥", C: "炮", S: "兵" };
 const BLACK_SYMBOLS: Record<string, string> = { G: "將", A: "士", E: "象", H: "馬", R: "車", C: "砲", S: "卒" };
 
-export function PieceDisc({
+function PieceDiscImpl({
   x,
   y,
   color,
@@ -51,3 +53,5 @@ export function PieceDisc({
     </g>
   );
 }
+
+export const PieceDisc = memo(PieceDiscImpl);

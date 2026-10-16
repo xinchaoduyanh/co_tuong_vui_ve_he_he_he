@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 // Mặt bàn cờ vẽ bằng SVG. Hệ toạ độ: lưới 0..8 x 0..9, viewBox "-1 -1 10 11".
 // Ảnh vân gỗ do agy sinh ở public/fx/board-wood.jpg; thiếu ảnh thì còn màu gỗ và vignette bên dưới.
 
@@ -29,7 +31,7 @@ function Marker({ x, y }: { x: number; y: number }) {
   );
 }
 
-export function BoardSurface() {
+function BoardSurfaceImpl() {
   return (
     <g>
       <defs>
@@ -115,3 +117,5 @@ export function BoardSurface() {
     </g>
   );
 }
+
+export const BoardSurface = memo(BoardSurfaceImpl);

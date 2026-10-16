@@ -39,6 +39,10 @@ public class MatchService {
         return matchRepository.findActiveByPlayerId(playerId, since);
     }
 
+    public List<Match> findActiveByUsername(String username, Date since) {
+        return matchRepository.findActiveByUsername(username, since);
+    }
+
     public Match updateMatch(Match match) {
         return matchRepository.save(match);
     }

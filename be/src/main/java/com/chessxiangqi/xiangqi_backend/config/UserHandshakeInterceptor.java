@@ -20,7 +20,6 @@ public class UserHandshakeInterceptor implements HandshakeInterceptor {
         if (username == null) {
             return false; // Reject connection if no username
         }
-        System.out.println("[BE] HandshakeInterceptor - username from query param: " + username);
         attributes.put("username", username);
         return true;
     }

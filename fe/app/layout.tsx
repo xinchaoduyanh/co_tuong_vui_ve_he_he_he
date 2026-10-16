@@ -1,6 +1,7 @@
 import type React from "react";
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Fraunces, Noto_Serif_TC } from "next/font/google";
+import { Be_Vietnam_Pro, Fraunces } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -8,6 +9,7 @@ import { WebSocketProvider } from "@/lib/websocket-context";
 import { AuthProvider } from "@/lib/api/context/AuthContext";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import { RejoinBanner } from "@/components/rejoin-banner";
+import { ActiveMatchProvider } from "@/lib/api/hooks/use-active-match";
 const ui = Be_Vietnam_Pro({
   subsets: ["latin", "vietnamese"],
   weight: ["400", "500", "600"],
@@ -20,12 +22,13 @@ const display = Fraunces({
   variable: "--font-display",
   display: "swap",
 });
-// Chữ Hán chỉ dùng trên quân cờ và dải sông; file lớn nên không preload
-const han = Noto_Serif_TC({
-  weight: ["700"],
+// Chữ Hán trên quân cờ và dải sông: chỉ 18 ký tự Noto Serif TC Bold (OFL), lưu cục bộ để không phải
+// tải hàng trăm mảnh font CJK từ Google mỗi lần build hay mở trang.
+const han = localFont({
+  src: "../public/fonts/han-subset.woff2",
+  weight: "700",
   variable: "--font-han",
   display: "swap",
-  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -51,8 +54,10 @@ export default function RootLayout({
           <AuthProvider>
             <NotificationProvider>
               <WebSocketProvider>
-                <RejoinBanner />
-                <main className="min-h-dvh">{children}</main>
+                <ActiveMatchProvider>
+                  <RejoinBanner />
+                  <main className="min-h-dvh">{children}</main>
+                </ActiveMatchProvider>
               </WebSocketProvider>
             </NotificationProvider>
           </AuthProvider>

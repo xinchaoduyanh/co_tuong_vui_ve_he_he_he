@@ -37,17 +37,7 @@ public class MatchHistoryController {
                 .body(ApiResponse.error("Không tìm thấy người dùng: " + username));
         }
 
-        // Log player id
-        System.out.println("DEBUG - playerId: " + player.getId());
-
         List<PlayerMatch> playerMatches = playerMatchRepository.findAllByPlayerIdWithOpponent(player.getId());
-        // Log toàn bộ match id, player1Id, player2Id
-        for (PlayerMatch pm : playerMatches) {
-            System.out.println("DEBUG - matchId: " + pm.getMatchId() +
-                ", player1Id: " + pm.getPlayerId() +
-                ", player2Id: " + pm.getOpponent().getId());
-        }
-
         MatchHistoryViewer viewer = new MatchHistoryViewer(new FilterByRecentMatchStrategy());
         return ResponseEntity.ok(ApiResponse.success(viewer.showHistory(player, playerMatches)));
     }

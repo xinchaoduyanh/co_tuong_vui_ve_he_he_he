@@ -25,6 +25,7 @@ import {
 import { LeaveConfirmDialog } from "@/components/leave-confirm-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PlayerBar } from "@/components/board/player-bar";
+import { LiveClock, type ClockState } from "@/components/board/live-clock";
 import { clearMatchStorage } from "@/lib/match-storage";
 import { BoardSurface } from "@/components/board/board-surface";
 import { PieceDisc } from "@/components/board/piece-disc";
@@ -45,23 +46,6 @@ function describeMove(text: string | null | undefined) {
   const name = PIECE_NAMES[m[1].toLowerCase()] ?? m[1];
   const side = m[1] === m[1].toLowerCase() ? "đỏ" : "đen";
   return `${name} ${side}: cột ${+m[2] + 1} hàng ${+m[3] + 1} → cột ${+m[4] + 1} hàng ${+m[5] + 1}`;
-}
-
-// Định dạng mm:ss cho đồng hồ
-function formatClock(ms: number | null) {
-  if (ms === null) return "--:--";
-  const total = Math.ceil(ms / 1000);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-// Đổi màu khi sắp hết giờ: <60s đỏ, <10s nhấp nháy
-function clockClass(ms: number | null) {
-  if (ms === null) return "";
-  if (ms < 10_000) return "text-primary animate-pulse";
-  if (ms < 60_000) return "text-primary";
-  return "";
 }
 
 export default function GameBoard() {
@@ -97,13 +81,7 @@ export default function GameBoard() {
   const [showDrawResponseDialog, setShowDrawResponseDialog] = useState(false);
   const [drawRequestFrom, setDrawRequestFrom] = useState<string | null>(null);
   // Đồng hồ: mốc thời gian từ server; FE chỉ đếm lùi để hiển thị, server quyết định hết giờ
-  const [clock, setClock] = useState<{
-    redMs: number;
-    blackMs: number;
-    turn: string;
-    receivedAt: number;
-  } | null>(null);
-  const [clockNow, setClockNow] = useState(() => Date.now());
+  const [clock, setClock] = useState<ClockState>(null);
   // Kết quả trận: có giá trị khi trận đã kết thúc (hiện overlay, không cần xác nhận khi rời)
   const [gameResult, setGameResult] = useState<GameResultView | null>(null);
   const gameOver = gameResult !== null;
@@ -140,23 +118,6 @@ export default function GameBoard() {
     handleMoveTo,
     resetSelection,
   } = useBoardLogic(pieces, turn);
-
-  // Log để debug
-  useEffect(() => {
-    console.log("Current pieces state:", pieces);
-    console.log("Turn:", turn);
-    console.log("My color:", myColor);
-  }, [pieces, turn, myColor]);
-
-  // Add debug logging for WebSocket status
-  useEffect(() => {
-    console.log("[FE-Game] WebSocket Status:", {
-      stompClient: !!stompClient,
-      isConnected,
-      matchId,
-      userId: user?.id,
-    });
-  }, [stompClient, isConnected, matchId, user]);
 
   // Lắng nghe move mới từ BE
   useEffect(() => {
@@ -240,20 +201,6 @@ export default function GameBoard() {
     });
     return () => sub.unsubscribe();
   }, [stompClient, isConnected, matchId]);
-
-  // Đếm lùi cục bộ mỗi 200ms khi đã có đồng hồ
-  useEffect(() => {
-    if (!clock) return;
-    const timer = setInterval(() => setClockNow(Date.now()), 200);
-    return () => clearInterval(timer);
-  }, [clock]);
-
-  const remainingOf = (side: "r" | "b") => {
-    if (!clock) return null;
-    const base = side === "r" ? clock.redMs : clock.blackMs;
-    const elapsed = clock.turn === side ? clockNow - clock.receivedAt : 0;
-    return Math.max(0, base - elapsed);
-  };
 
   // Khi có trạng thái mới từ server (mở trang, kết nối lại): đồng bộ bàn cờ, chiếu và đồng hồ
   useEffect(() => {
@@ -800,8 +747,7 @@ export default function GameBoard() {
       isMe={iAmRed}
       side="r"
       active={!gameOver && turn === "r"}
-      clockText={formatClock(remainingOf("r"))}
-      clockClassName={clockClass(remainingOf("r"))}
+      clock={<LiveClock clock={clock} side="r" />}
     />
   );
   const blackBar = (
@@ -811,8 +757,7 @@ export default function GameBoard() {
       isMe={iAmBlack}
       side="b"
       active={!gameOver && turn === "b"}
-      clockText={formatClock(remainingOf("b"))}
-      clockClassName={clockClass(remainingOf("b"))}
+      clock={<LiveClock clock={clock} side="b" />}
     />
   );
   const lastMoveText = describeMove(moveDescription);

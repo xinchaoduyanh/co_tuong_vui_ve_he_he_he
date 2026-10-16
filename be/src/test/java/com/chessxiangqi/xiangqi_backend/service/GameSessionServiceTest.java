@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -265,6 +266,22 @@ class GameSessionServiceTest {
         verify(playerService, times(2)).applyMatchResult(any(), changes.capture(), results.capture());
         assertEquals(List.of("DRAW", "DRAW"), results.getAllValues());
         assertEquals(List.of(0, 0), changes.getAllValues());
+    }
+
+    @Test
+    void registeredMatchIsFoundInMemoryWithoutTouchingDb() {
+        Move initial = new Move();
+        initial.setMatchId("m1");
+        initial.setBoardState(INITIAL_BOARD);
+        initial.setNextTurn("r");
+        initial.setTurnNumber(0);
+
+        service.registerNewMatch(match, initial);
+
+        assertTrue(service.findActiveSessionByPlayerId("r1").isPresent());
+        assertTrue(service.findActiveSessionByPlayerId("b1").isPresent());
+        verify(matchService, never()).findActiveByPlayerId(anyString(), any());
+        verify(moveService, never()).getLatestMove(anyString());
     }
 
     @Test

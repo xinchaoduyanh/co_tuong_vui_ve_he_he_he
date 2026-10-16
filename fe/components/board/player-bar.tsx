@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import type { ReactNode } from "react";
 import { PlayerAvatar } from "@/components/player-avatar";
 
 // Thanh người chơi: avatar, tên, Elo, bên cờ và đồng hồ. Bên đang đến lượt có viền chu sa và chấm nhấp nháy.
@@ -8,16 +8,14 @@ export function PlayerBar({
   isMe,
   side,
   active,
-  clockText,
-  clockClassName,
+  clock,
 }: {
   name?: string | null;
   elo?: number | null;
   isMe: boolean;
   side: "r" | "b";
   active: boolean;
-  clockText?: string;
-  clockClassName?: string;
+  clock?: ReactNode;
 }) {
   return (
     <div
@@ -43,12 +41,7 @@ export function PlayerBar({
           {side === "r" ? "Quân đỏ" : "Quân đen"}
         </p>
       </div>
-      {clockText !== undefined && (
-        <div className={`flex shrink-0 items-center gap-1.5 rounded-md bg-background/70 px-2.5 py-1.5 ${clockClassName ?? ""}`}>
-          <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <span className="tabular text-xl font-semibold leading-none">{clockText}</span>
-        </div>
-      )}
+      {clock}
     </div>
   );
 }
