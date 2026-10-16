@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api/config";
 // This file will contain the actual API calls to your backend
 // For now, it's just placeholder functions
 
@@ -11,7 +12,7 @@ interface ApiResponse<T> {
 
 export async function fetchMatchHistory(username: string) {
   const res = await fetch(
-    `http://localhost:8080/api/match-history/recent/${username}`
+    `${API_BASE_URL}/api/match-history/recent/${username}`
   );
   if (!res.ok) throw new Error("Không lấy được lịch sử đấu");
   const data = await res.json();
@@ -35,7 +36,7 @@ export async function submitMatchResult(matchId: number, result: string) {
 
 export async function fetchRecentMatches(username: string): Promise<Match[]> {
   const res = await fetch(
-    `http://localhost:8080/api/match-history/recent/${username}`
+    `${API_BASE_URL}/api/match-history/recent/${username}`
   );
   const response: ApiResponse<Match[]> = await res.json();
   if (!response.success) throw new Error(response.message);
@@ -46,7 +47,7 @@ export async function fetchOpponentRankMatches(
   username: string
 ): Promise<Match[]> {
   const res = await fetch(
-    `http://localhost:8080/api/match-history/opponent-rank/${username}`
+    `${API_BASE_URL}/api/match-history/opponent-rank/${username}`
   );
   const response: ApiResponse<Match[]> = await res.json();
   if (!response.success) throw new Error(response.message);

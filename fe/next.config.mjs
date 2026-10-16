@@ -1,16 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  poweredByHeader: false,
   images: {
-    domains: ['placeholder.com'],
     unoptimized: true,
   },
-}
+  // Bản production bỏ console.log (giữ error và warn)
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,
+  },
+  experimental: {
+    optimizePackageImports: ["lucide-react", "date-fns"],
+  },
+};
 
-export default nextConfig
+export default nextConfig;

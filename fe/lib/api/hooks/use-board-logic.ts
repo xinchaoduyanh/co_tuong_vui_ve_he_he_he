@@ -64,8 +64,6 @@ export function useBoardLogic(pieces: Piece[], myColor: "r" | "b") {
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
   const [validMoves, setValidMoves] = useState<{ x: number; y: number }[]>([]);
 
-  console.log("[DEBUG] pieces before useBoardLogic:", pieces);
-
   function getValidMoves(
     piece: Piece,
     allPieces: Piece[]
@@ -198,9 +196,7 @@ export function useBoardLogic(pieces: Piece[], myColor: "r" | "b") {
         }
         // Xuống
         for (let y = piece.y + 1; y <= 9; y++) {
-          console.log("[DEBUG] Xe moves, allPieces:", allPieces);
           const target = getPieceAt(piece.x, y, allPieces);
-          console.log("Xe check:", piece.x, y, "target:", target);
           if (!target) {
             moves.push({ x: piece.x, y });
           } else {

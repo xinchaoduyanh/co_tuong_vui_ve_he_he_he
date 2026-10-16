@@ -1,5 +1,6 @@
 package com.chessxiangqi.xiangqi_backend.service;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +32,15 @@ public class MatchService {
         // Generate and set ID before saving
         match.setId(UUID.randomUUID().toString());
         return matchRepository.save(match);
+    }
+
+    /** Trận người-người còn đang diễn ra của người chơi, tạo sau mốc {@code since}. */
+    public List<Match> findActiveByPlayerId(String playerId, Date since) {
+        return matchRepository.findActiveByPlayerId(playerId, since);
+    }
+
+    public List<Match> findActiveByUsername(String username, Date since) {
+        return matchRepository.findActiveByUsername(username, since);
     }
 
     public Match updateMatch(Match match) {

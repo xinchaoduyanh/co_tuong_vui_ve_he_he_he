@@ -1,4 +1,8 @@
 "use client";
+import { BoardSurface } from "@/components/board/board-surface";
+import { PieceDisc } from "@/components/board/piece-disc";
+import { PlayerBar } from "@/components/board/player-bar";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type React from "react";
 
@@ -20,25 +24,6 @@ import { useAuth } from "@/lib/api/context/AuthContext";
 import { useBoardLogic } from "@/lib/api/hooks/use-board-logic";
 import { useNotification } from "@/components/NotificationProvider";
 import { useAIGame } from "@/lib/api/hooks/use-ai-game";
-
-const redSymbols = {
-  G: "帥",
-  A: "仕",
-  E: "相",
-  H: "傌",
-  R: "俥",
-  C: "炮",
-  S: "兵",
-};
-const blackSymbols = {
-  G: "將",
-  A: "士",
-  E: "象",
-  H: "馬",
-  R: "車",
-  C: "砲",
-  S: "卒",
-};
 
 export default function AIGameBoard() {
   const { stompClient, isConnected } = useWebSocket();
@@ -407,69 +392,46 @@ export default function AIGameBoard() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100">
-        <div className="text-amber-800">Đang tải...</div>
+      <div className="flex justify-center items-center min-h-dvh bg-background">
+        <div className="text-foreground">Đang tải...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="bg-white/80 hover:bg-white shadow-sm"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold text-amber-800 bg-white/80 px-4 py-1 rounded-lg shadow-sm">
-            Cờ Tướng vs AI
-          </h1>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-red-500 border-red-500 bg-white/80 hover:bg-white shadow-sm"
-            onClick={handleSurrender}
-          >
-            <Flag className="h-4 w-4 mr-1" />
+    <div className="mx-auto w-full max-w-[640px] px-3 pb-10 pt-3">
+      <div className="w-full">
+        <header className="mb-3 flex items-center gap-2">
+          <Button asChild variant="ghost" size="icon" aria-label="Về trang chủ">
+            <Link href="/">
+              <ChevronLeft />
+            </Link>
+          </Button>
+          <h1 className="font-display text-xl font-bold">Cờ Tướng với máy</h1>
+          <Button variant="ghost" size="sm" className="ml-auto text-primary hover:text-primary" onClick={handleSurrender}>
+            <Flag />
             Đầu hàng
           </Button>
-        </div>
+        </header>
 
-        {/* Player info (top) */}
-        <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mb-4 flex items-center">
-          {/* Player1 (Red player) details */}
-          <Avatar className="h-10 w-10 border-2 border-red-400 shadow-sm">
-            <AvatarImage src="/placeholder.svg" alt={player1?.username} />
-            <AvatarFallback>
-              {player1?.username?.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col items-center">
-            <p className="font-medium">
-              {player1?.username} {user?.id === player1?.id && "(Bạn)"}
-            </p>
-            <span>ELO: {player1?.elo}</span>
-          </div>
-          <span className="ml-auto text-sm font-mono">
-            <Clock className="inline-block w-4 h-4 mr-1" />
-            {/* players.red.timeLeft */}
-          </span>
+        <div className="mb-3">
+          <PlayerBar
+            name={player1?.username}
+            elo={player1?.elo}
+            isMe={user?.id === player1?.id}
+            side="r"
+            active={turn === "r"}
+          />
         </div>
 
         {/* Game board container with padding */}
-        <div className="relative w-full rounded-lg shadow-lg mb-2 mx-auto overflow-hidden border-8 border-amber-700">
+        <div className="relative mx-auto w-full overflow-hidden rounded-xl shadow-[0_28px_60px_-28px_hsl(150_14%_2%/0.9)]">
           {/* SVG container with padding to ensure pieces aren't cut off */}
-          <div className="relative w-full pb-[112.5%]">
+          <div className="relative w-full" style={{ aspectRatio: "10 / 11" }}>
             <svg
               ref={svgRef}
               viewBox="-1 -1 10 11"
               className="absolute inset-0 w-full h-full"
-              style={{ background: "#f0d9b5" }}
               onClick={(e) => {
                 if (!selectedPiece || turn !== myColor) return;
 
@@ -488,169 +450,7 @@ export default function AIGameBoard() {
                 }
               }}
             >
-              {/* Border */}
-              <rect x="-1" y="-1" width="10" height="11" fill="#B45309" />
-
-              {/* Background */}
-              <rect x="0" y="0" width="8" height="9" fill="#F7D794" />
-
-              {/* Horizontal lines */}
-              {Array.from({ length: 10 }).map((_, i) => (
-                <line
-                  key={`h-${i}`}
-                  x1="0"
-                  y1={i}
-                  x2="8"
-                  y2={i}
-                  stroke="#8B4513"
-                  strokeWidth="0.05"
-                />
-              ))}
-
-              {/* Vertical lines */}
-              {Array.from({ length: 9 }).map((_, i) => (
-                <line
-                  key={`v-${i}`}
-                  x1={i}
-                  y1="0"
-                  x2={i}
-                  y2="9"
-                  stroke="#8B4513"
-                  strokeWidth="0.05"
-                />
-              ))}
-
-              {/* River */}
-              <rect
-                x="0"
-                y="4"
-                width="8"
-                height="1"
-                fill="#D6EAF8"
-                fillOpacity="0.5"
-              />
-
-              {/* Palace diagonal lines (top) */}
-              <line
-                x1="3"
-                y1="0"
-                x2="5"
-                y2="2"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-              <line
-                x1="5"
-                y1="0"
-                x2="3"
-                y2="2"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-
-              {/* Palace diagonal lines (bottom) */}
-              <line
-                x1="3"
-                y1="7"
-                x2="5"
-                y2="9"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-              <line
-                x1="5"
-                y1="7"
-                x2="3"
-                y2="9"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-
-              {/* River text - Replaced with Turn indicator */}
-              {myColor && turn && (
-                <text
-                  x="4"
-                  y="4.6"
-                  fontSize="0.4"
-                  fill="green"
-                  textAnchor="middle"
-                  pointerEvents="none"
-                >
-                  {(myColor === "r" && turn === "r") ||
-                  (myColor === "b" && turn === "b")
-                    ? "Lượt của bạn !"
-                    : "Chờ AI"}
-                </text>
-              )}
-
-              {/* Position markers */}
-              {[
-                // Cannon positions
-                [1, 2],
-                [7, 2],
-                [1, 7],
-                [7, 7],
-                // Soldier positions
-                [0, 3],
-                [2, 3],
-                [4, 3],
-                [6, 3],
-                [8, 3],
-                [0, 6],
-                [2, 6],
-                [4, 6],
-                [6, 6],
-                [8, 6],
-              ]
-                .filter(([x]) => x <= 8) // Đảm bảo không vẽ các điểm nằm ngoài bàn cờ
-                .map(([x, y], i) => (
-                  <g key={`marker-${i}`} pointerEvents="none">
-                    {/* Top left */}
-                    {x > 0 && y > 0 && (
-                      <path
-                        d={`M${x - 0.2},${y} L${x - 0.2},${y - 0.2} L${x},${
-                          y - 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Top right */}
-                    {x < 8 && y > 0 && (
-                      <path
-                        d={`M${x + 0.2},${y} L${x + 0.2},${y - 0.2} L${x},${
-                          y - 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Bottom left */}
-                    {x > 0 && y < 9 && (
-                      <path
-                        d={`M${x - 0.2},${y} L${x - 0.2},${y + 0.2} L${x},${
-                          y + 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Bottom right */}
-                    {x < 8 && y < 9 && (
-                      <path
-                        d={`M${x + 0.2},${y} L${x + 0.2},${y + 0.2} L${x},${
-                          y + 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                  </g>
-                ))}
+              <BoardSurface />
 
               {/* Valid moves indicators */}
               {turn === myColor &&
@@ -662,8 +462,10 @@ export default function AIGameBoard() {
                       cx={move.x}
                       cy={move.y}
                       r="0.3"
-                      fill="green"
-                      opacity="0.6"
+                      fill="#3FA37F"
+                      fillOpacity="0.5"
+                      stroke="#3FA37F"
+                      strokeWidth="0.03"
                       onClick={() => handlePlayerMove(move.x, move.y)}
                     />
                   ))}
@@ -724,52 +526,7 @@ export default function AIGameBoard() {
                               : "default",
                         }}
                       >
-                        {/* Shadow */}
-                        <circle
-                          cx={piece.x}
-                          cy={piece.y}
-                          r="0.4"
-                          fill="rgba(0,0,0,0.2)"
-                          transform="translate(0.03, 0.03)"
-                          pointerEvents="none"
-                        />
-                        {/* Piece background */}
-                        <circle
-                          cx={piece.x}
-                          cy={piece.y}
-                          r="0.38"
-                          fill={piece.color === "r" ? "#FFEBEE" : "#263238"}
-                          stroke={piece.color === "r" ? "#D32F2F" : "#455A64"}
-                          strokeWidth="0.05"
-                        />
-                        {/* Piece text */}
-                        <text
-                          x={piece.x}
-                          y={piece.y}
-                          fontSize="0.35"
-                          fill={piece.color === "r" ? "#D32F2F" : "#FFFFFF"}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          pointerEvents="none"
-                        >
-                          {piece.color === "r"
-                            ? redSymbols[piece.type as keyof typeof redSymbols]
-                            : blackSymbols[
-                                piece.type as keyof typeof blackSymbols
-                              ]}
-                        </text>
-                        {/* Current turn indicator */}
-                        {turn === piece.color && (
-                          <circle
-                            cx={piece.x}
-                            cy={piece.y}
-                            r="0.45"
-                            fill="none"
-                            stroke="#FFD700"
-                            strokeWidth="0.03"
-                            pointerEvents="none"
-                          />
-                        )}
+                        <PieceDisc x={piece.x} y={piece.y} color={piece.color} type={piece.type} />
                         {/* Selected piece indicator */}
                         {isSelected && (
                           <circle
@@ -803,47 +560,25 @@ export default function AIGameBoard() {
         </div>
       </div>
 
-      {/* Player info (bottom) */}
-      <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mt-4 flex items-center">
-        {/* Player2 (Black player) details */}
-        <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
-          <AvatarImage src="/placeholder.svg" alt={player2?.username} />
-          <AvatarFallback>
-            {player2?.username?.substring(0, 2).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div className="flex flex-col items-center">
-          <p className="font-medium">
-            {player2?.username} {user?.id === player2?.id && "(Bạn)"}
-          </p>
-          <span>ELO: {player2?.elo}</span>
-        </div>
-        <span className="ml-auto text-sm font-mono">
-          <Clock className="inline-block w-4 h-4 mr-1" />
-          {/* players.black.timeLeft */}
-        </span>
+      <div className="mt-3 w-full">
+        <PlayerBar
+          name={player2?.username}
+          elo={player2?.elo}
+          isMe={user?.id === player2?.id}
+          side="b"
+          active={turn === "b"}
+        />
       </div>
 
-      {/* Surrender Confirmation Dialog */}
-      {showSurrenderDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Đầu hàng</h2>
-            <p className="mb-6">Bạn có chắc chắn muốn đầu hàng?</p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={handleConfirmSurrender}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                Đồng ý
-              </Button>
-              <Button onClick={handleCancelSurrender} variant="outline">
-                Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showSurrenderDialog}
+        title="Đầu hàng"
+        description="Bạn có chắc chắn muốn đầu hàng? Ván này sẽ tính là thua."
+        confirmLabel="Đầu hàng"
+        cancelLabel="Hủy"
+        onConfirm={handleConfirmSurrender}
+        onCancel={handleCancelSurrender}
+      />
     </div>
   );
 }

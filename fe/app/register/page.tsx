@@ -2,6 +2,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerUser } from "@/lib/api/services/auth-service";
+import Link from "next/link";
+import { AuthShell } from "@/components/auth-shell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -26,50 +31,48 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-amber-50">
-      <form
-        onSubmit={handleRegister}
-        className="bg-white p-8 rounded shadow-md w-80"
-      >
-        <h2 className="text-2xl font-bold mb-4 text-center">Đăng ký</h2>
-        <input
-          className="w-full p-2 mb-3 border rounded"
-          placeholder="Tên đăng nhập"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          disabled={isLoading}
-        />
-        <input
-          className="w-full p-2 mb-3 border rounded"
-          placeholder="Mật khẩu"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          disabled={isLoading}
-        />
-        {error && (
-          <div className="text-red-500 mb-2 p-2 bg-red-50 rounded border border-red-200">
-            {error}
-          </div>
-        )}
-        <button
-          className={`w-full py-2 rounded text-white ${
-            isLoading ? "bg-gray-400" : "bg-amber-600 hover:bg-amber-700"
-          }`}
-          type="submit"
-          disabled={isLoading}
-        >
-          {isLoading ? "Đang xử lý..." : "Đăng ký"}
-        </button>
-        <div className="mt-4 text-center">
-          Đã có tài khoản?{" "}
-          <a href="/login" className="text-amber-600 underline">
-            Đăng nhập
-          </a>
+    <AuthShell title="Đăng ký" subtitle="Tạo tài khoản để bắt đầu tính điểm Elo.">
+      <form onSubmit={handleRegister} className="flex flex-col gap-5" noValidate>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="username">Tên đăng nhập</Label>
+          <Input
+            id="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            disabled={isLoading}
+            aria-invalid={!!error}
+          />
         </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="password">Mật khẩu</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={isLoading}
+            aria-invalid={!!error}
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm font-medium text-primary">
+            {error}
+          </p>
+        )}
+        <Button type="submit" size="lg" disabled={isLoading}>
+          {isLoading ? "Đang tạo tài khoản…" : "Đăng ký"}
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Đã có tài khoản?{" "}
+          <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+            Đăng nhập
+          </Link>
+        </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }

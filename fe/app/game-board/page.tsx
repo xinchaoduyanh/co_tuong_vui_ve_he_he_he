@@ -1,13 +1,12 @@
 "use client";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  Bot,
   ChevronLeft,
-  Clock,
-  Trophy,
   Flag,
+  Handshake,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -19,25 +18,41 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { useBoardLogic } from "@/lib/api/hooks/use-board-logic";
 import { useNotification } from "@/components/NotificationProvider";
+import {
+  GameResultOverlay,
+  GameResultView,
+} from "@/components/game-result-overlay";
+import { LeaveConfirmDialog } from "@/components/leave-confirm-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { PlayerBar } from "@/components/board/player-bar";
+import { LiveClock, type ClockState } from "@/components/board/live-clock";
+import { clearMatchStorage } from "@/lib/match-storage";
+import { BoardSurface } from "@/components/board/board-surface";
+import { PieceDisc } from "@/components/board/piece-disc";
+import { playSound } from "@/lib/game-effects";
+import {
+  BoardEffectsStyles,
+  Burst,
+  CaptureBurst,
+  CheckOverlay,
+  LandRing,
+} from "@/components/board-effects";
+import { TurnBanner } from "@/components/board/turn-banner";
+import { Seal } from "@/components/board/seal";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { CultureCard } from "@/components/culture-card";
 
-const redSymbols = {
-  G: "帥",
-  A: "仕",
-  E: "相",
-  H: "傌",
-  R: "俥",
-  C: "炮",
-  S: "兵",
+// "p 0,3 -> 0,4" -> "Tốt đỏ: cột 1 hàng 4 → cột 1 hàng 5" (chữ thường là quân đỏ)
+const PIECE_NAMES: Record<string, string> = {
+  k: "Tướng", a: "Sĩ", e: "Tượng", h: "Mã", r: "Xe", c: "Pháo", p: "Tốt",
 };
-const blackSymbols = {
-  G: "將",
-  A: "士",
-  E: "象",
-  H: "馬",
-  R: "車",
-  C: "砲",
-  S: "卒",
-};
+function describeMove(text: string | null | undefined) {
+  const m = text?.match(/^(\w) (\d),(\d) -> (\d),(\d)$/);
+  if (!m) return null;
+  const name = PIECE_NAMES[m[1].toLowerCase()] ?? m[1];
+  const side = m[1] === m[1].toLowerCase() ? "đỏ" : "đen";
+  return `${name} ${side}: cột ${+m[2] + 1} hàng ${+m[3] + 1} → cột ${+m[4] + 1} hàng ${+m[5] + 1}`;
+}
 
 export default function GameBoard() {
   const { stompClient, isConnected } = useWebSocket();
@@ -49,6 +64,31 @@ export default function GameBoard() {
   const [isCheckmate, setIsCheckmate] = useState(false);
   const [moveDescription, setMoveDescription] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundRef = useRef(true);
+  soundRef.current = soundEnabled;
+  // Hiệu ứng nước đi: ô đi/đến gần nhất và các đợt ăn quân đang chạy
+  const [lastMove, setLastMove] = useState<{
+    fromX: number; fromY: number; toX: number; toY: number; id: number;
+  } | null>(null);
+  const [bursts, setBursts] = useState<Burst[]>([]);
+  const prevBoardRef = useRef<string | null>(null);
+  // Tăng mỗi khi có nước chiếu: kích hoạt nháy đỏ và dấu 將軍
+  const [checkPulse, setCheckPulse] = useState(0);
+  // Nền riêng cho phòng đấu (xem globals.css: body[data-scene="match"])
+  useEffect(() => {
+    document.body.dataset.scene = "match";
+    return () => {
+      delete document.body.dataset.scene;
+    };
+  }, []);
+
+  // Vài giây đầu: quân lần lượt rơi vào bàn
+  const [intro, setIntro] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setIntro(false), 2200);
+    return () => clearTimeout(t);
+  }, []);
+  const fxId = useRef(0);
   const params = useParams();
   const svgRef = useRef<SVGSVGElement>(null);
   const router = useRouter();
@@ -62,6 +102,13 @@ export default function GameBoard() {
   const [showDrawRequestDialog, setShowDrawRequestDialog] = useState(false);
   const [showDrawResponseDialog, setShowDrawResponseDialog] = useState(false);
   const [drawRequestFrom, setDrawRequestFrom] = useState<string | null>(null);
+  // Đồng hồ: mốc thời gian từ server; FE chỉ đếm lùi để hiển thị, server quyết định hết giờ
+  const [clock, setClock] = useState<ClockState>(null);
+  // Kết quả trận: có giá trị khi trận đã kết thúc (hiện overlay, không cần xác nhận khi rời)
+  const [gameResult, setGameResult] = useState<GameResultView | null>(null);
+  const gameOver = gameResult !== null;
+  // Hành động rời trận đang chờ người chơi xác nhận
+  const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
 
   const {
     matchId,
@@ -72,8 +119,10 @@ export default function GameBoard() {
     turn,
     setTurn,
     isLoading,
+    error,
     makeMove,
     players,
+    snapshot,
   } = useGameState();
 
   // Xác định màu cờ của mình
@@ -92,32 +141,46 @@ export default function GameBoard() {
     resetSelection,
   } = useBoardLogic(pieces, turn);
 
-  // Log để debug
-  useEffect(() => {
-    console.log("Current pieces state:", pieces);
-    console.log("Turn:", turn);
-    console.log("My color:", myColor);
-  }, [pieces, turn, myColor]);
-
-  // Add debug logging for WebSocket status
-  useEffect(() => {
-    console.log("[FE-Game] WebSocket Status:", {
-      stompClient: !!stompClient,
-      isConnected,
-      matchId,
-      userId: user?.id,
-    });
-  }, [stompClient, isConnected, matchId, user]);
-
   // Lắng nghe move mới từ BE
   useEffect(() => {
     if (!stompClient || !isConnected || !matchId) return;
 
     const handleMove = (data: any) => {
-      console.log("Received move data:", data);
+      // Hiệu ứng: quân bị ăn nếu ô đến trước đó có quân
+      const prev = prevBoardRef.current;
+      const hasMoveInfo = [data.fromX, data.fromY, data.toX, data.toY].every(
+        (v) => typeof v === "number"
+      );
+      if (hasMoveInfo) {
+        fxId.current += 1;
+        const id = fxId.current;
+        setLastMove({ fromX: data.fromX, fromY: data.fromY, toX: data.toX, toY: data.toY, id });
+        const capturedChar = prev ? prev[data.toY * 9 + data.toX] : ".";
+        if (capturedChar && capturedChar !== ".") {
+          const color = capturedChar === capturedChar.toLowerCase() ? "r" : "b";
+          setBursts((list) => [...list, { id, x: data.toX, y: data.toY, color }]);
+          setTimeout(() => setBursts((list) => list.filter((b) => b.id !== id)), 1100);
+          playSound("capture", soundRef.current);
+        } else {
+          playSound("move", soundRef.current);
+        }
+        if (data.isCheck && !data.isCheckmate) {
+          setTimeout(() => playSound("check", soundRef.current), 250);
+          setCheckPulse((n) => n + 1);
+        }
+      }
+      prevBoardRef.current = data.boardState;
       setBoardState(data.boardState);
       setTurn(data.nextTurn);
       setMoveDescription(data.moveDescription);
+      if (data.redTimeMs != null && data.blackTimeMs != null) {
+        setClock({
+          redMs: data.redTimeMs,
+          blackMs: data.blackTimeMs,
+          turn: data.nextTurn,
+          receivedAt: Date.now(),
+        });
+      }
       setIsCheck(data.isCheck);
       setIsCheckmate(data.isCheckmate);
 
@@ -131,19 +194,6 @@ export default function GameBoard() {
           summary: "Kết thúc trận đấu",
           detail: "Chiếu bí! Trận đấu kết thúc.",
         });
-      } else if (data.isCheck) {
-        showNotification({
-          severity: "warn",
-          summary: "Chiếu tướng",
-          detail: "Tướng của bạn đang bị chiếu!",
-        });
-      }
-      // Lưu lại trạng thái mới vào localStorage
-      if (data.boardState) {
-        localStorage.setItem("initialBoardState", data.boardState);
-      }
-      if (data.nextTurn) {
-        localStorage.setItem("currentTurn", data.nextTurn);
       }
     };
 
@@ -159,6 +209,61 @@ export default function GameBoard() {
       subscription.unsubscribe();
     };
   }, [stompClient, isConnected, matchId, setPieces]);
+
+  // Đồng bộ đồng hồ định kỳ từ server
+  useEffect(() => {
+    if (!stompClient || !isConnected || !matchId) return;
+    const sub = stompClient.subscribe(`/topic/match.${matchId}.clock`, (msg) => {
+      const data = JSON.parse(msg.body);
+      setClock({
+        redMs: data.redTimeMs,
+        blackMs: data.blackTimeMs,
+        turn: data.turn,
+        receivedAt: Date.now(),
+      });
+    });
+    return () => sub.unsubscribe();
+  }, [stompClient, isConnected, matchId]);
+
+  // Khi có trạng thái mới từ server (mở trang, kết nối lại): đồng bộ bàn cờ, chiếu và đồng hồ
+  useEffect(() => {
+    if (!snapshot) return;
+    prevBoardRef.current = snapshot.boardState;
+    setBoardState(snapshot.boardState);
+    setIsCheck(snapshot.check);
+    setMoveDescription(snapshot.moveDescription ?? "");
+    setClock({
+      redMs: snapshot.redTimeMs,
+      blackMs: snapshot.blackTimeMs,
+      turn: snapshot.turn,
+      receivedAt: Date.now(),
+    });
+  }, [snapshot]);
+
+  // Thông báo khi đối thủ mất kết nối hoặc quay lại
+  useEffect(() => {
+    if (!stompClient || !isConnected || !matchId) return;
+    const sub = stompClient.subscribe(`/topic/match.${matchId}.presence`, (msg) => {
+      const data = JSON.parse(msg.body);
+      if (data.username === user?.username) return;
+      if (data.status === "DISCONNECTED") {
+        showNotification({
+          severity: "warn",
+          summary: "Đối thủ mất kết nối",
+          detail: `${data.username} mất kết nối. Nếu không quay lại trong 60 giây, trận sẽ kết thúc.`,
+          life: 8000,
+        });
+      } else if (data.status === "RECONNECTED") {
+        showNotification({
+          severity: "success",
+          summary: "Đối thủ đã kết nối lại",
+          detail: `${data.username} đã quay lại trận.`,
+          life: 4000,
+        });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [stompClient, isConnected, matchId, user?.username, showNotification]);
 
   useEffect(() => {
     if (!stompClient || !isConnected || !matchId) return;
@@ -176,38 +281,93 @@ export default function GameBoard() {
           localStorage.setItem("user", JSON.stringify(updatedUser));
         }
 
-        // Hiển thị thông báo kết quả
-        const isWinner =
-          (data.player1 && data.player1.id === myId && data.winner === "red") ||
-          (data.player2 && data.player2.id === myId && data.winner === "black");
-        const myEloChange =
-          data.player1 && data.player1.id === myId
-            ? data.player1EloChange
-            : data.player2EloChange;
-        const opponentEloChange =
-          data.player1 && data.player1.id === myId
-            ? data.player2EloChange
-            : data.player1EloChange;
-
-        showNotification({
-          severity: isWinner ? "success" : "info",
-          summary: "Kết thúc trận đấu",
-          detail: `${
-            isWinner ? "Bạn thắng" : "Bạn thua"
-          }\nĐiểm thay đổi của bạn: ${
-            myEloChange > 0 ? "+" : ""
-          }${myEloChange}\nĐiểm thay đổi của đối thủ: ${
-            opponentEloChange > 0 ? "+" : ""
-          }${opponentEloChange}`,
-          life: 5000,
+        const isRed = data.player1 && data.player1.id === myId;
+        const myEloChange = isRed ? data.player1EloChange : data.player2EloChange;
+        const opponentEloChange = isRed ? data.player2EloChange : data.player1EloChange;
+        const outcome =
+          data.winner === "DRAW"
+            ? "draw"
+            : (data.winner === "red") === Boolean(isRed)
+            ? "win"
+            : "lose";
+        setGameResult({
+          outcome,
+          reason: data.reason ?? null,
+          myEloChange,
+          opponentEloChange,
+          opponentName: (isRed ? data.player2?.username : data.player1?.username) ?? null,
         });
-
-        // Điều hướng về Home hoặc trang kết quả
-        router.push("/");
+        setIsCheck(false);
+        playSound(outcome === "lose" ? "lose" : "win", soundRef.current);
+        clearMatchStorage();
       }
     });
     return () => sub.unsubscribe();
   }, [stompClient, isConnected, matchId, user, router, showNotification]);
+
+  // Trận đã kết thúc từ trước (mở lại link): hiện kết quả từ snapshot
+  useEffect(() => {
+    if (!snapshot || snapshot.status !== "ENDED") return;
+    const isRed = snapshot.players.red?.id === user?.id;
+    const outcome =
+      snapshot.winner === "DRAW" || !snapshot.winner
+        ? "draw"
+        : (snapshot.winner === "red") === isRed
+        ? "win"
+        : "lose";
+    setGameResult({
+      outcome,
+      reason: snapshot.endReason,
+      myEloChange: null,
+      opponentEloChange: null,
+      opponentName: null,
+    });
+    clearMatchStorage();
+  }, [snapshot, user?.id]);
+
+  // Rời trận: nếu đang chơi thì hỏi xác nhận, đồng ý thì đầu hàng rồi mới rời
+  const requestLeave = (action: () => void) => {
+    if (gameOver) {
+      action();
+      return;
+    }
+    setLeaveAction(() => action);
+  };
+
+  const confirmLeave = () => {
+    const action = leaveAction;
+    setLeaveAction(null);
+    if (matchId && stompClient?.connected && user?.id) {
+      stompClient.publish({
+        destination: "/app/game.surrender",
+        body: JSON.stringify({ matchId, playerId: user.id }),
+      });
+    }
+    action?.();
+  };
+
+  // Đóng tab / tải lại giữa trận: trình duyệt hiện hộp xác nhận mặc định (không tính là đầu hàng)
+  useEffect(() => {
+    if (gameOver) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [gameOver]);
+
+  // Nút Back của trình duyệt: giữ lại trang và hỏi xác nhận
+  useEffect(() => {
+    if (gameOver) return;
+    window.history.pushState({ inGame: true }, "");
+    const onPopState = () => {
+      window.history.pushState({ inGame: true }, "");
+      setLeaveAction(() => () => router.push("/"));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [gameOver, router]);
 
   // Hiển thị thông báo chào mừng khi vào game
   useEffect(() => {
@@ -575,88 +735,144 @@ export default function GameBoard() {
     setDrawRequestFrom(null);
   };
 
-  if (isLoading) {
+  if (error && !isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100">
-        <div className="text-amber-800">Đang tải...</div>
+      <div className="mx-auto flex min-h-dvh max-w-sm flex-col items-center justify-center gap-4 px-4 text-center">
+        <h1 className="font-display text-3xl font-semibold">Không mở được trận</h1>
+        <p className="text-muted-foreground">{error.message}</p>
+        <Button asChild>
+          <Link href="/">Về trang chủ</Link>
+        </Button>
       </div>
     );
   }
 
+  if (isLoading) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-[640px] flex-col gap-3 px-3 pt-4" aria-busy="true">
+        <div className="h-[68px] animate-pulse rounded-lg bg-card" />
+        <div className="aspect-[10/11] w-full animate-pulse rounded-xl bg-card" />
+        <div className="h-[68px] animate-pulse rounded-lg bg-card" />
+      </div>
+    );
+  }
+
+  const redName = player1?.username;
+  const blackName = player2?.username;
+  const iAmRed = user?.id === player1?.id;
+  const iAmBlack = user?.id === player2?.id;
+  const actionsDisabled = gameOver || !isConnected || !stompClient;
+
+  const redBar = (
+    <PlayerBar
+      name={redName}
+      elo={player1?.elo}
+      wins={player1?.wins}
+      loses={player1?.loses}
+      draws={player1?.draws}
+      isMe={iAmRed}
+      side="r"
+      active={!gameOver && turn === "r"}
+      clock={<LiveClock clock={clock} side="r" />}
+    />
+  );
+  const blackBar = (
+    <PlayerBar
+      name={blackName}
+      elo={player2?.elo}
+      wins={player2?.wins}
+      loses={player2?.loses}
+      draws={player2?.draws}
+      isMe={iAmBlack}
+      side="b"
+      active={!gameOver && turn === "b"}
+      clock={<LiveClock clock={clock} side="b" />}
+    />
+  );
+  const lastMoveText = describeMove(moveDescription);
+
+  const actionButtons = (
+    <>
+      <Button
+        variant="outline"
+        className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-[#B9863A]/80"
+        onClick={handleDrawRequest}
+        disabled={actionsDisabled}
+      >
+        <Seal char="和" size={24} tilt={-5} />
+        Cầu hòa
+      </Button>
+      <Button
+        variant="outline"
+        className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-primary"
+        onClick={handleSurrender}
+        disabled={gameOver}
+      >
+        <Seal char="降" size={24} tilt={4} />
+        Đầu hàng
+      </Button>
+    </>
+  );
+
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="bg-white/80 hover:bg-white shadow-sm"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold text-amber-800 bg-white/80 px-4 py-1 rounded-lg shadow-sm">
-            Cờ Tướng
-          </h1>
+    <div className="mx-auto w-full max-w-[1100px] px-3 pb-[calc(84px+env(safe-area-inset-bottom))] pt-3 lg:px-6 lg:pb-10 lg:pt-6">
+      <header className="mb-3 flex items-center gap-2 lg:mb-5">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Rời trận"
+          onClick={() => requestLeave(() => router.push("/"))}
+        >
+          <ChevronLeft />
+        </Button>
+        <h1 className="font-display text-xl font-bold">Cờ Tướng</h1>
+        <div className="ml-auto flex items-center gap-1">
           <Button
-            onClick={() => router.push("/ai-game-board")}
-            className="flex items-center gap-2"
-            variant="outline"
-          >
-            <Trophy className="h-4 w-4" />
-            Chơi với AI
-          </Button>
-          <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="text-red-500 border-red-500 bg-white/80 hover:bg-white shadow-sm"
-            onClick={handleSurrender}
+            onClick={() => requestLeave(() => router.push("/ai-game-board"))}
           >
-            <Flag className="h-4 w-4 mr-1" />
-            Đầu hàng
+            <Bot />
+            <span className="hidden sm:inline">Chơi với máy</span>
           </Button>
+          <ThemeToggle />
           <Button
-            variant="outline"
-            size="sm"
-            className="text-blue-500 border-blue-500 bg-white/80 hover:bg-white shadow-sm ml-2"
-            onClick={handleDrawRequest}
-            disabled={!isConnected || !stompClient}
+            variant="ghost"
+            size="icon"
+            aria-label={soundEnabled ? "Tắt âm thanh" : "Bật âm thanh"}
+            onClick={() => setSoundEnabled((v) => !v)}
           >
-            Cầu hòa
+            {soundEnabled ? <Volume2 /> : <VolumeX />}
           </Button>
         </div>
+      </header>
 
-        {/* Player info (top) */}
-        <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mb-4 flex items-center">
-          {/* Player1 (Red player) details */}
-          <Avatar className="h-10 w-10 border-2 border-red-400 shadow-sm">
-            <AvatarImage src="/placeholder.svg" alt={player1?.username} />
-            <AvatarFallback>
-              {player1?.username?.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col items-center">
-            <p className="font-medium">
-              {player1?.username} {user?.id === player1?.id && "(Bạn)"}
-            </p>
-            <span>ELO: {player1?.elo}</span>
-          </div>
-          <span className="ml-auto text-sm font-mono">
-            <Clock className="inline-block w-4 h-4 mr-1" />
-            {/* players.red.timeLeft */}
-          </span>
-        </div>
+      <div className="lg:grid lg:grid-cols-[minmax(0,640px)_minmax(300px,1fr)] lg:items-start lg:gap-10">
+        <section aria-label="Bàn cờ" className="mx-auto w-full max-w-[640px]">
+          {!gameOver && myColor && (
+            <div className="mb-3">
+              <TurnBanner
+                mine={turn === myColor}
+                side={turn}
+                opponentName={myColor === "r" ? blackName : redName}
+              />
+            </div>
+          )}
 
-        {/* Game board container with padding */}
-        <div className="relative w-full rounded-lg shadow-lg mb-2 mx-auto overflow-hidden border-8 border-amber-700">
-          {/* SVG container with padding to ensure pieces aren't cut off */}
-          <div className="relative w-full pb-[112.5%]">
+          <div className="mb-3 lg:hidden">{redBar}</div>
+
+          <div className="relative overflow-hidden rounded-xl shadow-[0_28px_60px_-28px_hsl(150_14%_2%/0.9)]">
+            {isCheck && !isCheckmate && !gameOver && (
+              <span role="alert" className="sr-only">
+                {turn === myColor ? "Chiếu tướng! Tướng của bạn đang bị chiếu" : "Bạn đã chiếu tướng đối thủ"}
+              </span>
+            )}
+            {checkPulse > 0 && !gameOver && <CheckOverlay key={checkPulse} />}
+            <div className="relative w-full" style={{ aspectRatio: "10 / 11" }}>
             <svg
               ref={svgRef}
               viewBox="-1 -1 10 11"
               className="absolute inset-0 w-full h-full"
-              style={{ background: "#f0d9b5" }}
               onClick={(e) => {
                 if (!selectedPiece || turn !== myColor) return;
 
@@ -675,169 +891,7 @@ export default function GameBoard() {
                 }
               }}
             >
-              {/* Border */}
-              <rect x="-1" y="-1" width="10" height="11" fill="#B45309" />
-
-              {/* Background */}
-              <rect x="0" y="0" width="8" height="9" fill="#F7D794" />
-
-              {/* Horizontal lines */}
-              {Array.from({ length: 10 }).map((_, i) => (
-                <line
-                  key={`h-${i}`}
-                  x1="0"
-                  y1={i}
-                  x2="8"
-                  y2={i}
-                  stroke="#8B4513"
-                  strokeWidth="0.05"
-                />
-              ))}
-
-              {/* Vertical lines */}
-              {Array.from({ length: 9 }).map((_, i) => (
-                <line
-                  key={`v-${i}`}
-                  x1={i}
-                  y1="0"
-                  x2={i}
-                  y2="9"
-                  stroke="#8B4513"
-                  strokeWidth="0.05"
-                />
-              ))}
-
-              {/* River */}
-              <rect
-                x="0"
-                y="4"
-                width="8"
-                height="1"
-                fill="#D6EAF8"
-                fillOpacity="0.5"
-              />
-
-              {/* Palace diagonal lines (top) */}
-              <line
-                x1="3"
-                y1="0"
-                x2="5"
-                y2="2"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-              <line
-                x1="5"
-                y1="0"
-                x2="3"
-                y2="2"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-
-              {/* Palace diagonal lines (bottom) */}
-              <line
-                x1="3"
-                y1="7"
-                x2="5"
-                y2="9"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-              <line
-                x1="5"
-                y1="7"
-                x2="3"
-                y2="9"
-                stroke="#8B4513"
-                strokeWidth="0.05"
-              />
-
-              {/* River text - Replaced with Turn indicator */}
-              {myColor && turn && (
-                <text
-                  x="4"
-                  y="4.6"
-                  fontSize="0.4"
-                  fill="green"
-                  textAnchor="middle"
-                  pointerEvents="none"
-                >
-                  {(myColor === "r" && turn === "r") ||
-                  (myColor === "b" && turn === "b")
-                    ? "Lượt của bạn !"
-                    : "Chờ đối thủ"}
-                </text>
-              )}
-
-              {/* Position markers */}
-              {[
-                // Cannon positions
-                [1, 2],
-                [7, 2],
-                [1, 7],
-                [7, 7],
-                // Soldier positions
-                [0, 3],
-                [2, 3],
-                [4, 3],
-                [6, 3],
-                [8, 3],
-                [0, 6],
-                [2, 6],
-                [4, 6],
-                [6, 6],
-                [8, 6],
-              ]
-                .filter(([x]) => x <= 8) // Đảm bảo không vẽ các điểm nằm ngoài bàn cờ
-                .map(([x, y], i) => (
-                  <g key={`marker-${i}`} pointerEvents="none">
-                    {/* Top left */}
-                    {x > 0 && y > 0 && (
-                      <path
-                        d={`M${x - 0.2},${y} L${x - 0.2},${y - 0.2} L${x},${
-                          y - 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Top right */}
-                    {x < 8 && y > 0 && (
-                      <path
-                        d={`M${x + 0.2},${y} L${x + 0.2},${y - 0.2} L${x},${
-                          y - 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Bottom left */}
-                    {x > 0 && y < 9 && (
-                      <path
-                        d={`M${x - 0.2},${y} L${x - 0.2},${y + 0.2} L${x},${
-                          y + 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                    {/* Bottom right */}
-                    {x < 8 && y < 9 && (
-                      <path
-                        d={`M${x + 0.2},${y} L${x + 0.2},${y + 0.2} L${x},${
-                          y + 0.2
-                        }`}
-                        stroke="#8B4513"
-                        strokeWidth="0.05"
-                        fill="none"
-                      />
-                    )}
-                  </g>
-                ))}
+              <BoardSurface />
 
               {/* Valid moves indicators */}
               {turn === myColor &&
@@ -849,11 +903,25 @@ export default function GameBoard() {
                       cx={move.x}
                       cy={move.y}
                       r="0.3"
-                      fill="green"
-                      opacity="0.6"
+                      className="xq-dot"
+                      fill="#3FA37F"
+                      fillOpacity="0.5"
+                      stroke="#3FA37F"
+                      strokeWidth="0.03"
                       onClick={() => handlePlayerMove(move.x, move.y)}
                     />
                   ))}
+
+              <BoardEffectsStyles />
+              {/* Nước đi gần nhất: ô xuất phát và ô đến */}
+              {lastMove && (
+                <g pointerEvents="none" className="xq-lastmove">
+                  <rect x={lastMove.fromX - 0.45} y={lastMove.fromY - 0.45} width="0.9" height="0.9"
+                    rx="0.12" fill="rgba(255,193,7,0.18)" stroke="#FFB300" strokeWidth="0.04" strokeDasharray="0.12,0.08" />
+                  <rect x={lastMove.toX - 0.47} y={lastMove.toY - 0.47} width="0.94" height="0.94"
+                    rx="0.14" fill="rgba(255,193,7,0.28)" stroke="#FFB300" strokeWidth="0.06" />
+                </g>
+              )}
 
               {/* Chess Pieces */}
               {pieces &&
@@ -879,9 +947,16 @@ export default function GameBoard() {
                         (m) => m.x === piece.x && m.y === piece.y
                       );
 
+                    // Quân vừa đi tới: trượt từ ô cũ sang ô mới rồi nảy nhẹ
+                    const justMoved =
+                      lastMove &&
+                      lastMove.toX === piece.x &&
+                      lastMove.toY === piece.y;
+
                     return (
                       <g
                         key={`piece-${piece.type}-${piece.color}-${piece.x}-${piece.y}`}
+                        className={[justMoved ? "xq-slide" : "", intro ? "xq-enter" : ""].filter(Boolean).join(" ") || undefined}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (turn === myColor && piece.color === myColor) {
@@ -899,6 +974,13 @@ export default function GameBoard() {
                           }
                         }}
                         style={{
+                          ["--d" as any]: pieces.indexOf(piece),
+                          ...(justMoved
+                            ? ({
+                                ["--dx" as any]: `${lastMove.fromX - lastMove.toX}px`,
+                                ["--dy" as any]: `${lastMove.fromY - lastMove.toY}px`,
+                              } as React.CSSProperties)
+                            : {}),
                           cursor:
                             (piece.color === myColor && turn === myColor) ||
                             (selectedPiece &&
@@ -911,52 +993,14 @@ export default function GameBoard() {
                               : "default",
                         }}
                       >
-                        {/* Shadow */}
-                        <circle
-                          cx={piece.x}
-                          cy={piece.y}
-                          r="0.4"
-                          fill="rgba(0,0,0,0.2)"
-                          transform="translate(0.03, 0.03)"
-                          pointerEvents="none"
-                        />
-                        {/* Piece background */}
-                        <circle
-                          cx={piece.x}
-                          cy={piece.y}
-                          r="0.38"
-                          fill={piece.color === "r" ? "#FFEBEE" : "#263238"}
-                          stroke={piece.color === "r" ? "#D32F2F" : "#455A64"}
-                          strokeWidth="0.05"
-                        />
-                        {/* Piece text */}
-                        <text
+                        <PieceDisc
                           x={piece.x}
                           y={piece.y}
-                          fontSize="0.35"
-                          fill={piece.color === "r" ? "#D32F2F" : "#FFFFFF"}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          pointerEvents="none"
-                        >
-                          {piece.color === "r"
-                            ? redSymbols[piece.type as keyof typeof redSymbols]
-                            : blackSymbols[
-                                piece.type as keyof typeof blackSymbols
-                              ]}
-                        </text>
-                        {/* Current turn indicator */}
-                        {turn === piece.color && (
-                          <circle
-                            cx={piece.x}
-                            cy={piece.y}
-                            r="0.45"
-                            fill="none"
-                            stroke="#FFD700"
-                            strokeWidth="0.03"
-                            pointerEvents="none"
-                          />
-                        )}
+                          color={piece.color}
+                          type={piece.type}
+                          glow={!gameOver && piece.color === turn ? (turn === myColor ? "mine" : "theirs") : false}
+                          lifted={!!isSelected}
+                        />
                         {/* Selected piece indicator */}
                         {isSelected && (
                           <circle
@@ -964,11 +1008,27 @@ export default function GameBoard() {
                             cy={piece.y}
                             r="0.45"
                             fill="none"
-                            stroke="#4CAF50"
-                            strokeWidth="0.05"
+                            stroke="#E3B65B"
+                            strokeWidth="0.06"
                             pointerEvents="none"
                           />
                         )}
+                        {/* Tướng đang bị chiếu: viền đỏ nhấp nháy */}
+                        {isCheck &&
+                          !isCheckmate &&
+                          piece.type === "G" &&
+                          piece.color === turn && (
+                            <circle
+                              cx={piece.x}
+                              cy={piece.y}
+                              r="0.48"
+                              fill="none"
+                              stroke="#E53935"
+                              strokeWidth="0.08"
+                              pointerEvents="none"
+                              className="animate-pulse"
+                            />
+                          )}
                         {/* Hiệu ứng quân bị ăn */}
                         {canBeCaptured && (
                           <circle
@@ -976,7 +1036,7 @@ export default function GameBoard() {
                             cy={piece.y}
                             r="0.5"
                             fill="none"
-                            stroke="#F44336"
+                            stroke="#D8432E"
                             strokeWidth="0.07"
                             strokeDasharray="0.1,0.1"
                             pointerEvents="none"
@@ -985,99 +1045,80 @@ export default function GameBoard() {
                       </g>
                     );
                   })}
+              {lastMove && <LandRing key={`land-${lastMove.id}`} x={lastMove.toX} y={lastMove.toY} />}
+              {/* Hiệu ứng ăn quân (vẽ trên cùng) */}
+              {bursts.map((b) => (
+                <CaptureBurst key={b.id} burst={b} />
+              ))}
             </svg>
+            </div>
           </div>
-        </div>
+
+          <div className="mt-3 lg:hidden">{blackBar}</div>
+        </section>
+
+        <aside className="hidden flex-col gap-3 lg:flex" aria-label="Thông tin trận">
+          {redBar}
+          <div className="panel-lacquer panel-frame flex items-center gap-3 rounded-lg px-4 py-3">
+            <Seal char="譜" size={32} tilt={-3} />
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Kỳ phổ · nước vừa đi</p>
+              <p className="tabular mt-0.5 min-h-[1.5rem] font-medium">{lastMoveText ?? "Chưa có nước đi"}</p>
+            </div>
+          </div>
+          {blackBar}
+          <div className="mt-2 flex gap-2">{actionButtons}</div>
+          <CultureCard className="mt-4" />
+        </aside>
       </div>
 
-      {/* Player info (bottom) */}
-      <div className="w-full max-w-2xl bg-white rounded-lg shadow-md p-4 mt-4 flex items-center">
-        {/* Player2 (Black player) details */}
-        <Avatar className="h-10 w-10 border border-gray-300 shadow-sm">
-          <AvatarImage src="/placeholder.svg" alt={player2?.username} />
-          <AvatarFallback>
-            {player2?.username?.substring(0, 2).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div className="flex flex-col items-center">
-          <p className="font-medium">
-            {player2?.username} {user?.id === player2?.id && "(Bạn)"}
-          </p>
-          <span>ELO: {player2?.elo}</span>
-        </div>
-        <span className="ml-auto text-sm font-mono">
-          <Clock className="inline-block w-4 h-4 mr-1" />
-          {/* players.black.timeLeft */}
-        </span>
+      <div className="fixed inset-x-0 bottom-0 z-header border-t border-border bg-background px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2.5 lg:hidden">
+        <div className="mx-auto flex max-w-[640px] gap-2">{actionButtons}</div>
       </div>
 
-      {/* Surrender Confirmation Dialog */}
-      {showSurrenderDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Đầu hàng</h2>
-            <p className="mb-6">Bạn có chắc chắn muốn đầu hàng?</p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={handleConfirmSurrender}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                Đồng ý
-              </Button>
-              <Button onClick={handleCancelSurrender} variant="outline">
-                Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
+      {gameResult && (
+        <GameResultOverlay
+          result={gameResult}
+          onHome={() => router.push("/")}
+          onHistory={() => router.push("/lich-su-dau")}
+        />
       )}
 
-      {/* Draw Request Dialog */}
-      {showDrawRequestDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Cầu hòa</h2>
-            <p className="mb-6">Bạn có chắc chắn muốn gửi yêu cầu cầu hòa?</p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={handleConfirmDrawRequest}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                Gửi yêu cầu
-              </Button>
-              <Button onClick={handleCancelDrawRequest} variant="outline">
-                Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LeaveConfirmDialog
+        open={leaveAction !== null}
+        onStay={() => setLeaveAction(null)}
+        onLeave={confirmLeave}
+      />
 
-      {/* Draw Response Dialog */}
-      {showDrawResponseDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-            <h2 className="text-xl font-bold mb-4">Yêu cầu cầu hòa</h2>
-            <p className="mb-6">
-              Đối thủ muốn cầu hòa. Bạn có chấp nhận không?
-            </p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={() => handleDrawResponse(true)}
-                className="bg-green-500 hover:bg-green-600 text-white"
-              >
-                Chấp nhận
-              </Button>
-              <Button
-                onClick={() => handleDrawResponse(false)}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                Từ chối
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showSurrenderDialog}
+        title="Đầu hàng"
+        description="Bạn có chắc chắn muốn đầu hàng? Ván này sẽ tính là thua."
+        confirmLabel="Đầu hàng"
+        cancelLabel="Hủy"
+        onConfirm={handleConfirmSurrender}
+        onCancel={handleCancelSurrender}
+      />
+
+      <ConfirmDialog
+        open={showDrawRequestDialog}
+        title="Cầu hòa"
+        description="Gửi lời cầu hòa tới đối thủ?"
+        confirmLabel="Gửi yêu cầu"
+        cancelLabel="Hủy"
+        onConfirm={handleConfirmDrawRequest}
+        onCancel={handleCancelDrawRequest}
+      />
+
+      <ConfirmDialog
+        open={showDrawResponseDialog}
+        title="Đối thủ cầu hòa"
+        description="Đối thủ muốn hòa ván này. Bạn có chấp nhận không?"
+        confirmLabel="Chấp nhận"
+        cancelLabel="Từ chối"
+        onConfirm={() => handleDrawResponse(true)}
+        onCancel={() => handleDrawResponse(false)}
+      />
     </div>
   );
 }

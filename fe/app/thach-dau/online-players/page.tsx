@@ -3,18 +3,20 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useWebSocket } from "@/lib/websocket-context";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PlayerAvatar } from "@/components/player-avatar";
+import { PageHeader } from "@/components/brand";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/list-states";
 import { useOnlinePlayers } from "@/lib/api/hooks/use-online-players";
+import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 
 type OnlinePlayer = {
   id: string;
   username: string;
   sessionId: string;
   status: string;
+  elo?: number;
 };
 
 
@@ -22,13 +24,14 @@ export default function OnlinePlayersPage() {
   const { data: apiOnlineUsers, isLoading, error } = useOnlinePlayers();
   const [onlineUsers, setOnlineUsers] = useState<OnlinePlayer[]>([]);
   const {
-    stompClient,
     onlineUsers: contextOnlineUsers,
-    sessionId,
     pendingChallenges,
+    sendChallenge,
+    cancelChallenge,
   } = useWebSocket();
   const user = useAuth();
   const router = useRouter();
+  const activeMatch = useActiveMatch();
 
   // Khi apiOnlineUsers thay đổi (lần đầu vào trang), cập nhật danh sách
   useEffect(() => {
@@ -45,104 +48,80 @@ export default function OnlinePlayersPage() {
   }, [contextOnlineUsers]);
 
   const handleChallenge = (targetUsername: string) => {
-    if (!stompClient?.connected) {
-      toast.error("Không thể kết nối đến server");
-      return;
-    }
-
-    if (!user?.user?.username || !sessionId) {
-      toast.error("Không thể gửi thách đấu: Thông tin người dùng không hợp lệ");
-      return;
-    }
-
-    console.log("[FE] Sending challenge to:", targetUsername);
-    console.log("[FE] Current sessionId:", sessionId);
-    console.log("[FE] Current user:", user?.user?.username);
-
-    stompClient.publish({
-      destination: "/app/challenge.send",
-      body: targetUsername,
-      headers: {
-        username: user?.user?.username,
-        sessionId: sessionId,
-      },
-    });
-    console.log("[FE] Challenge request sent to /app/challenge.send");
+    sendChallenge(targetUsername);
   };
 
-  if (isLoading) {
-    return (
-      <div className="container mx-auto p-4 text-center text-gray-500">
-        Đang tải danh sách người chơi online...
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="container mx-auto p-4 text-center text-red-500">
-        {error}
-      </div>
-    );
-  }
+  const others = (onlineUsers || []).filter((u) => u.username !== user?.user?.username);
 
   return (
-    <div className="container mx-auto p-4 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Người chơi online</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!onlineUsers || onlineUsers.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              Không có người chơi nào online
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {onlineUsers
-                .filter((u) => u.username !== user?.user?.username)
-                .filter((u) => u.status !== "IN_GAME")
-                .map((u) => (
-                  <div
-                    key={u.id || u.username}
-                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 border border-amber-300">
-                        <AvatarImage src="/placeholder.svg" alt={u.username} />
-                        <AvatarFallback className="bg-amber-100 text-amber-800">
-                          {String(u.username || "??")
-                            .substring(0, 2)
-                            .toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{u.username}</p>
-                        <p className="text-sm text-gray-500">
-                          {u.status === "IN_GAME" ? "Đang chơi" : "Online"}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => handleChallenge(u.username)}
-                      size="sm"
-                      className="bg-amber-600 hover:bg-amber-700 text-white"
-                      disabled={
-                        u.status === "IN_GAME" ||
-                        pendingChallenges.includes(u.username)
-                      }
-                    >
-                      {u.status === "IN_GAME"
-                        ? "Đang chơi"
-                        : pendingChallenges.includes(u.username)
-                        ? "Đang chờ..."
-                        : "Thách đấu"}
+    <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
+      <PageHeader title="Người chơi online" backHref="/thach-dau" />
+
+      {activeMatch && (
+        <div className="rise mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary/12 px-4 py-3 ring-1 ring-primary/40">
+          <p className="text-sm">
+            Bạn đang có trận với <strong>{activeMatch.opponent}</strong>, chưa thể tìm trận khác.
+          </p>
+          <Button size="sm" onClick={() => router.push(`/game-board?matchId=${activeMatch.matchId}`)}>
+            Vào lại trận
+          </Button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <ListSkeleton />
+      ) : error ? (
+        <ErrorState message={String(error)} />
+      ) : others.length === 0 ? (
+        <EmptyState
+          title="Chưa có ai online"
+          hint="Mời bạn bè vào cùng, danh sách sẽ tự cập nhật khi có người đăng nhập."
+        />
+      ) : (
+        <ul className="flex flex-col">
+          {others.map((u, i) => {
+            const inGame = u.status === "IN_GAME";
+            const pending = pendingChallenges.includes(u.username);
+            return (
+              <li
+                key={u.id || u.username}
+                className="rise flex items-center gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-accent/60"
+                style={{ ["--i" as any]: Math.min(i, 8) }}
+              >
+                <PlayerAvatar name={u.username} className="h-11 w-11 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium leading-tight">{u.username}</p>
+                  <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+                    <span
+                      className={`h-2 w-2 rounded-full ${inGame ? "bg-warning" : "bg-success"}`}
+                      aria-hidden
+                    />
+                    {inGame ? "Đang chơi" : "Online"}
+                    {typeof u.elo === "number" && <span className="tabular">· Elo {u.elo}</span>}
+                  </p>
+                </div>
+                {pending ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Đang chờ…</span>
+                    <Button onClick={() => cancelChallenge(u.username)} size="sm" variant="outline">
+                      Huỷ
                     </Button>
                   </div>
-                ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ) : (
+                  <Button
+                    onClick={() => handleChallenge(u.username)}
+                    size="sm"
+                    disabled={inGame || !!activeMatch}
+                    title={activeMatch ? "Bạn đang trong trận, hãy vào lại trận trước" : undefined}
+                  >
+                    {inGame ? "Đang chơi" : "Thách đấu"}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

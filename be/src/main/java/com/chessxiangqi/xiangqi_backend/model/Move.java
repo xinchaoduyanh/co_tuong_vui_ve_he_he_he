@@ -20,4 +20,7 @@ public class Move {
     private boolean isCheckmate;
     private String boardState;
     private String nextTurn;
+    // Thời gian còn lại của mỗi bên sau nước này (ms); null với nước khởi tạo
+    private Long redTimeMs;
+    private Long blackTimeMs;
 }

@@ -11,7 +11,6 @@ public class CustomHandshakeHandler extends DefaultHandshakeHandler {
     @Override
     protected Principal determineUser(ServerHttpRequest request, WebSocketHandler wsHandler, Map<String, Object> attributes) {
         String username = (String) attributes.get("username");
-        System.out.println("[BE] CustomHandshakeHandler - Principal username: " + username);
         if (username == null) {
             username = "anon-" + System.currentTimeMillis();
         }

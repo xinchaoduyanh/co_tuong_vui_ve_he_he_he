@@ -2,23 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Trophy,
-  Users,
-  Monitor,
-  History,
-  BarChart3,
-  LogOut,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { handleLogout } from "@/lib/api/context/AuthContext";
 import { User } from "@/lib/types/user";
+import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
+import { PlayerAvatar } from "@/components/player-avatar";
+import { Wordmark } from "@/components/brand";
+import { BoardMenu } from "@/components/board-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { CultureCard } from "@/components/culture-card";
+import { RankBadge } from "@/components/rank-badge";
 
 export default function Home() {
   const router = useRouter();
+  const activeMatch = useActiveMatch();
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -32,80 +31,69 @@ export default function Home() {
 
   if (!user) return null;
 
+  const playHref = activeMatch ? `/game-board?matchId=${activeMatch.matchId}` : "/thach-dau";
+  const stats: Array<[string, number]> = [
+    ["Thắng", user.wins],
+    ["Thua", user.loses],
+    ["Hòa", user.draws],
+    ["Tổng trận", user.totalMatches],
+  ];
+
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
-      {/* User info section */}
-      <div className="w-full max-w-md flex items-center justify-between bg-white rounded-lg p-4 shadow-md mb-8">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-12 w-12 border-2 border-amber-500">
-            <AvatarImage src="/placeholder.svg" alt={user.username} />
-            <AvatarFallback className="bg-amber-200 text-amber-800">
-              {user.username.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h2 className="font-bold text-lg">{user.username}</h2>
-            <p className="text-sm text-gray-600">Elo: {user.elo}</p>
-            <p className="text-sm text-gray-600">
-              Thắng: {user.wins} | Thua: {user.loses} | Hòa: {user.draws}
-            </p>
-            <p className="text-sm text-gray-600">
-              Tổng số trận: {user.totalMatches}
-            </p>
-          </div>
-        </div>
+    <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
+      <header className="rise flex items-center justify-between" style={{ ["--i" as any]: 0 }}>
+        <Wordmark />
         <div className="flex items-center gap-1">
-          <Trophy className="h-5 w-5 text-amber-500" />
-          <span className="font-semibold">{user.elo}</span>
+          <ThemeToggle />
+          <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <LogOut />
+            Thoát
+          </Button>
         </div>
-      </div>
+      </header>
 
-      {/* Game title */}
-      <h1 className="text-3xl font-bold text-amber-800 mb-8">Cờ Tướng</h1>
-
-      {/* Menu options */}
-      <Card className="w-full max-w-md bg-white/80 backdrop-blur-sm shadow-lg">
-        <CardContent className="p-6">
-          <div className="grid gap-4">
-            <Link href="/thach-dau" className="w-full">
-              <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
-                <Users className="h-5 w-5" />
-                <span className="text-lg">Thách đấu</span>
-              </Button>
-            </Link>
-
-            <Link href="/ai-game-board" className="w-full">
-              <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
-                <Monitor className="h-5 w-5" />
-                <span className="text-lg">Chơi với máy</span>
-              </Button>
-            </Link>
-
-            <Link href="/lich-su-dau" className="w-full">
-              <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
-                <History className="h-5 w-5" />
-                <span className="text-lg">Lịch sử đấu</span>
-              </Button>
-            </Link>
-
-            <Link href="/bang-xep-hang" className="w-full">
-              <Button className="h-14 w-full bg-amber-600 hover:bg-amber-700 text-white flex justify-start gap-3">
-                <BarChart3 className="h-5 w-5" />
-                <span className="text-lg">Bảng xếp hạng</span>
-              </Button>
-            </Link>
-
-            <Button
-              variant="outline"
-              className="h-14 border-amber-600 text-amber-800 hover:bg-amber-100 flex justify-start gap-3 mt-2"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="text-lg">Thoát</span>
-            </Button>
+      <section className="rise mt-10 flex items-end justify-between gap-4" style={{ ["--i" as any]: 1 }}>
+        <div className="flex min-w-0 items-center gap-4">
+          <PlayerAvatar name={user.username} className="h-14 w-14 shrink-0 text-lg" />
+          <div className="min-w-0">
+            <p className="text-sm text-muted-foreground">Xin chào</p>
+            <h1 className="truncate font-display text-3xl font-bold leading-tight">{user.username}</h1>
+            <p className="mt-1 text-sm text-muted-foreground"><RankBadge elo={user.elo} /></p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="text-right">
+          <p className="text-sm text-muted-foreground">Elo</p>
+          <p className="tabular font-display text-5xl font-bold leading-none">{user.elo}</p>
+        </div>
+      </section>
+
+      <dl className="rise mt-6 grid grid-cols-4 gap-px overflow-hidden rounded-lg bg-border" style={{ ["--i" as any]: 2 }}>
+        {stats.map(([label, value]) => (
+          <div key={label} className="bg-card px-3 py-3">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="tabular mt-0.5 text-xl font-semibold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <nav className="rise mt-8" aria-label="Chức năng" style={{ ["--i" as any]: 3 }}>
+        <BoardMenu
+          cta={{
+            href: playHref,
+            title: activeMatch ? `Vào lại trận với ${activeMatch.opponent}` : "Thách đấu",
+            hint: activeMatch ? "Hoàn thành ván hiện tại trước khi tìm ván khác" : "Mời một kỳ thủ đang online",
+            badge: activeMatch ? "Đang có trận" : undefined,
+          }}
+          pieces={[
+            { id: "ai", href: activeMatch ? playHref : "/ai-game-board", x: 1, y: 2, side: "r", type: "H", title: activeMatch ? "Vào lại trận" : "Chơi với máy", hint: "Luyện tập, không tính điểm" },
+            { id: "rank", href: "/bang-xep-hang", x: 7, y: 2, side: "r", type: "R", title: "Xếp hạng", hint: "Theo Elo và tỉ lệ thắng" },
+            { id: "history", href: "/lich-su-dau", x: 1, y: 7, side: "b", type: "A", title: "Lịch sử đấu", hint: "Các ván gần đây" },
+            { id: "culture", href: "/van-hoa", x: 7, y: 7, side: "b", type: "E", title: "Văn hóa", hint: "Quân, cổ tích, lời răn" },
+          ]}
+        />
+      </nav>
+
+      <CultureCard className="rise mt-10" />
     </div>
   );
 }

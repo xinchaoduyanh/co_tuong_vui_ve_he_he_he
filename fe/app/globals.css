@@ -1,53 +1,57 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import "primereact/resources/themes/lara-light-blue/theme.css";
-@import "primereact/resources/primereact.min.css";
-@import "primeicons/primeicons.css";
+
+/* Thiết kế: phòng chơi cờ ban đêm. Mặt sơn mài tối, bàn cờ gỗ là vật sáng duy nhất.
+   Một nền, một mực, một màu nhấn (đỏ chu sa). Xanh ngọc và hổ phách chỉ là màu trạng thái. */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 20 14.3% 4.1%;
-    --card: 0 0% 100%;
-    --card-foreground: 20 14.3% 4.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 20 14.3% 4.1%;
-    --primary: 47.9 95.8% 53.1%;
-    --primary-foreground: 26 83.3% 14.1%;
-    --secondary: 60 4.8% 95.9%;
-    --secondary-foreground: 24 9.8% 10%;
-    --muted: 60 4.8% 95.9%;
-    --muted-foreground: 25 5.3% 44.7%;
-    --accent: 60 4.8% 95.9%;
-    --accent-foreground: 24 9.8% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 60 9.1% 97.8%;
-    --border: 20 5.9% 90%;
-    --input: 20 5.9% 90%;
-    --ring: 35.5 91.7% 32.9%;
-    --radius: 0.5rem;
+    --background: 90 11% 92%;
+    --foreground: 150 12% 8%;
+    --card: 80 20% 96%;
+    --card-foreground: 150 12% 8%;
+    --popover: 80 20% 96%;
+    --popover-foreground: 150 12% 8%;
+    --primary: 8 66% 46%;
+    --primary-foreground: 22 100% 97%;
+    --secondary: 90 11% 88%;
+    --secondary-foreground: 150 12% 8%;
+    --muted: 90 11% 88%;
+    --muted-foreground: 150 6% 37%;
+    --accent: 90 11% 86%;
+    --accent-foreground: 150 12% 8%;
+    --destructive: 8 66% 46%;
+    --destructive-foreground: 22 100% 97%;
+    --success: 160 50% 32%;
+    --warning: 40 78% 33%;
+    --border: 90 9% 82%;
+    --input: 90 9% 82%;
+    --ring: 8 66% 46%;
+    --radius: 0.375rem;
   }
 
   .dark {
-    --background: 20 14.3% 4.1%;
-    --foreground: 60 9.1% 97.8%;
-    --card: 20 14.3% 4.1%;
-    --card-foreground: 60 9.1% 97.8%;
-    --popover: 20 14.3% 4.1%;
-    --popover-foreground: 60 9.1% 97.8%;
-    --primary: 47.9 95.8% 53.1%;
-    --primary-foreground: 26 83.3% 14.1%;
-    --secondary: 12 6.5% 15.1%;
-    --secondary-foreground: 60 9.1% 97.8%;
-    --muted: 12 6.5% 15.1%;
-    --muted-foreground: 24 5.4% 63.9%;
-    --accent: 12 6.5% 15.1%;
-    --accent-foreground: 60 9.1% 97.8%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 60 9.1% 97.8%;
-    --border: 12 6.5% 15.1%;
-    --input: 12 6.5% 15.1%;
-    --ring: 35.5 91.7% 32.9%;
+    --background: 150 14% 7%;
+    --foreground: 44 30% 88%;
+    --card: 150 13% 10%;
+    --card-foreground: 44 30% 88%;
+    --popover: 150 13% 10%;
+    --popover-foreground: 44 30% 88%;
+    --primary: 8 68% 51%;
+    --primary-foreground: 22 100% 97%;
+    --secondary: 150 12% 14%;
+    --secondary-foreground: 44 30% 88%;
+    --muted: 150 12% 14%;
+    --muted-foreground: 140 8% 62%;
+    --accent: 150 12% 16%;
+    --accent-foreground: 44 30% 88%;
+    --destructive: 8 68% 51%;
+    --destructive-foreground: 22 100% 97%;
+    --success: 160 44% 46%;
+    --warning: 40 66% 54%;
+    --border: 150 11% 19%;
+    --input: 150 11% 19%;
+    --ring: 8 68% 51%;
   }
 }
 
@@ -55,7 +59,211 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1, "cv11" 1;
+    min-height: 100dvh;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display), serif;
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 }
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .font-display { font-family: var(--font-display), serif; }
+  .font-han { font-family: var(--font-han), "Noto Serif CJK TC", "Songti TC", serif; }
+}
+
+/* Vào trang: các khối hiện lần lượt, chỉ dùng transform và opacity */
+@keyframes xq-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.rise { animation: xq-rise 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+
+/* Nền trang: tranh thủy mặc do agy sinh (public/fx). Thiếu ảnh thì chỉ còn màu nền trơn. */
+:root { --page-bg: url("/fx/bg-light.jpg"); --page-bg-opacity: 0.85; }
+.dark { --page-bg: url("/fx/bg-dark.jpg"); --page-bg-opacity: 0.62; }
+body[data-scene="match"] { --page-bg: url("/fx/match-light.jpg"); --page-bg-opacity: 0.5; }
+.dark body[data-scene="match"] { --page-bg: url("/fx/match-dark.jpg"); --page-bg-opacity: 0.55; }
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--page-bg);
+  background-size: cover;
+  background-position: center;
+  opacity: var(--page-bg-opacity);
+}
+
+/* Bảng gỗ sơn mài: nền sơn, hai nét vàng đồng viền kép như khung tranh */
+.panel-lacquer {
+  background-color: hsl(var(--card));
+  background-image: linear-gradient(hsl(var(--card) / 0.9), hsl(var(--card) / 0.9)), url("/fx/lacquer-panel.jpg");
+  background-size: auto, 220px;
+}
+.panel-frame {
+  position: relative;
+  box-shadow: 0 0 0 1px hsl(40 45% 48% / 0.4), 0 14px 30px -18px rgb(0 0 0 / 0.7);
+}
+.panel-frame::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid hsl(40 45% 52% / 0.22);
+  border-radius: 0.3rem;
+  pointer-events: none;
+}
+
+/* Hồi văn (回紋): dải hoa văn vuông xoắn chạy phía trên biển hiệu */
+.meander-top::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 4px;
+  height: 7px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpolyline points='0,6 0,1 8,1 8,5 3,5 3,3 6,3' fill='none' stroke='%23B9863A' stroke-opacity='0.55' stroke-width='1'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size: 12px 7px;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* Lượt đi */
+@keyframes xq-turn-glow {
+  0%, 100% { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.7), 0 0 14px -4px hsl(var(--primary) / 0.35); }
+  50% { box-shadow: 0 0 0 1.5px hsl(var(--primary)), 0 0 30px -4px hsl(var(--primary) / 0.7); }
+}
+@keyframes xq-pulse-text { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
+@keyframes xq-dots {
+  0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+}
+.xq-turn-mine { animation: xq-turn-glow 1.6s ease-in-out infinite; }
+.xq-turn-text { text-shadow: 0 0 20px hsl(var(--primary) / 0.6); animation: xq-pulse-text 1.6s ease-in-out infinite; }
+.xq-dots::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: xq-dots 1.4s steps(1, end) infinite; }
+.xq-bar-active {
+  box-shadow: 0 0 0 1.5px hsl(var(--primary)), 0 0 28px -6px hsl(var(--primary) / 0.6);
+}
+@keyframes xq-badge { 0%, 100% { filter: drop-shadow(0 0 2px hsl(var(--primary) / 0.5)); } 50% { filter: drop-shadow(0 0 9px hsl(var(--primary) / 0.95)); } }
+.xq-badge-glow { animation: xq-badge 1.6s ease-in-out infinite; }
+
+/* Quân cờ trên bàn (SVG: px = đơn vị ô) */
+@keyframes xq-glow { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+.xq-glow-mine { stroke: #F59E0B; animation: xq-glow 1.5s ease-in-out infinite; }
+.xq-glow-theirs { stroke: #D8432E; animation: xq-glow 2.2s ease-in-out infinite; opacity: 0.5; }
+.xq-lifted { transform-box: fill-box; transform-origin: center; transform: translateY(-0.06px) scale(1.1); transition: transform 0.15s ease-out; }
+@keyframes xq-enter { from { opacity: 0; transform: translateY(-0.7px) scale(1.3); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.xq-enter { transform-box: fill-box; transform-origin: center; animation: xq-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; animation-delay: calc(var(--d, 0) * 16ms); }
+@keyframes xq-dotpulse { 0%, 100% { transform: scale(0.85); } 50% { transform: scale(1.12); } }
+.xq-dot { transform-box: fill-box; transform-origin: center; animation: xq-dotpulse 1.4s ease-in-out infinite; }
+@keyframes xq-landring { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
+.xq-landring { transform-box: fill-box; transform-origin: center; animation: xq-landring 0.55s ease-out forwards; pointer-events: none; }
+
+/* Chiếu tướng: bàn cờ nháy đỏ và đóng dấu 將軍 */
+@keyframes xq-flash { from { opacity: 1; } to { opacity: 0; } }
+.xq-flash { animation: xq-flash 0.9s ease-out forwards; pointer-events: none; background: radial-gradient(circle at center, transparent 35%, hsl(var(--primary) / 0.55) 100%); }
+@keyframes xq-stamp {
+  0% { opacity: 0; transform: scale(2.4) rotate(-14deg); }
+  18% { opacity: 1; transform: scale(1) rotate(-7deg); }
+  75% { opacity: 1; transform: scale(1) rotate(-7deg); }
+  100% { opacity: 0; transform: scale(1.04) rotate(-7deg); }
+}
+.xq-stamp { animation: xq-stamp 1.5s ease-out forwards; }
+@keyframes xq-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-3px); } 40% { transform: translateX(3px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+.xq-shake { animation: xq-shake 0.4s ease-in-out; }
+
+/* ===== Lớp phụ họa (AmbientLayer) ===== */
+.ambient { contain: layout paint; }
+
+/* Cò bay: dải 4 khung vỗ cánh, bay ngang màn hình rồi lặp lại */
+@keyframes crane-cross { from { transform: translate3d(-25vw, 0, 0); } to { transform: translate3d(125vw, -5vh, 0); } }
+@keyframes crane-flap {
+  0% { background-position: 0 0; }
+  25% { background-position: 33.3333% 0; }
+  50% { background-position: 66.6667% 0; }
+  75% { background-position: 100% 0; }
+}
+.crane { position: absolute; left: 0; aspect-ratio: 234 / 210; animation: crane-cross var(--dur, 60s) linear infinite; will-change: transform; }
+.crane-sprite {
+  width: 100%;
+  height: 100%;
+  background: url("/fx/crane-strip.png") 0 0 / 400% 100% no-repeat;
+  animation: crane-flap 0.9s step-end infinite;
+  opacity: 0.36;
+}
+.dark .crane-sprite { filter: invert(1) hue-rotate(180deg); opacity: 0.55; }
+
+/* Đèn lồng đung đưa ở hai bên mép trên (ẩn trên màn hình nhỏ) */
+@keyframes lantern-swing { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+.lantern {
+  position: absolute;
+  top: -10px;
+  width: 66px;
+  height: 211px;
+  display: none;
+  background: url("/fx/lantern.png") center / contain no-repeat;
+  transform-origin: 50% 0;
+  animation: lantern-swing 5.5s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 16px rgb(255 120 40 / 0.45));
+  opacity: 0.9;
+}
+.lantern-l { left: 5%; }
+.lantern-r { right: 5%; animation-delay: -2.7s; }
+@media (min-width: 900px) { .lantern { display: block; } }
+
+/* Sương trôi chậm (chỉ hợp nền tối) */
+@keyframes mist-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+.ambient-mist {
+  position: absolute;
+  left: 0;
+  width: 200%;
+  height: 46%;
+  background: url("/fx/mist.jpg") 0 0 / 50% 100% repeat-x;
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: mist-drift 110s linear infinite;
+}
+.dark .ambient-mist { opacity: 0.22; }
+.ambient-mist-a { bottom: 0; }
+.ambient-mist-b { bottom: 18%; animation-duration: 160s; animation-direction: reverse; height: 36%; }
+.dark .ambient-mist-b { opacity: 0.14; }
+
+/* Lá tre rơi: lớp ngoài rơi, lớp trong đưa qua đưa lại */
+@keyframes leaf-fall { from { transform: translate3d(0, -8vh, 0) rotate(0deg); } to { transform: translate3d(14vw, 108vh, 0) rotate(300deg); } }
+@keyframes leaf-sway { from { transform: translateX(-18px) rotate(-18deg); } to { transform: translateX(18px) rotate(18deg); } }
+.leaf-fall { position: absolute; top: 0; color: #5B7A63; opacity: 0.45; animation: leaf-fall 30s linear infinite; will-change: transform; }
+.dark .leaf-fall { color: #4E8F7B; opacity: 0.4; }
+.leaf-sway { animation: leaf-sway 4s ease-in-out infinite alternate; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===== Menu bàn cờ (BoardMenu) ===== */
+@keyframes xq-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.7cqw); } }
+.xq-bob { animation: xq-bob 3.6s ease-in-out infinite; }
+@keyframes xq-flow { to { stroke-dashoffset: -0.68; } }
+.xq-flow { animation: xq-flow 1.6s linear infinite; }
+@keyframes xq-menu-glow { 0%, 100% { filter: drop-shadow(0 0 0.6cqw rgb(227 182 91 / 0.35)); } 50% { filter: drop-shadow(0 0 2cqw rgb(227 182 91 / 0.85)); } }
+.xq-menu-glow { animation: xq-menu-glow 1.8s ease-in-out infinite; }
+@keyframes xq-dot-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } to { opacity: 0.9; transform: translate(-50%, -50%) scale(1); } }
+.xq-dot-in { animation: xq-dot-in 0.22s ease-out both; }
+
+/* Gợi ý dưới nhãn chỉ hiện khi bàn đủ rộng */
+.xq-hint { display: none; }
+@container (min-width: 500px) { .xq-hint { display: block; } }

@@ -71,16 +71,30 @@ public class PlayerService {
             String onlineList = onlinePlayers.stream()
                 .map(p -> String.format("[%s] %s", p.getStatus(), p.getUsername()))
                 .collect(Collectors.joining(", "));
-            log.info("[STATUS] Current online players: {}", onlineList);
+            log.debug("[STATUS] Current online players: {}", onlineList);
         }
     }
 
-    public void removeOnlinePlayerBySessionId(String sessionId) {
+    /**
+     * Gỡ phiên khỏi danh sách online. Trả về true nếu đó là phiên hiện tại của người chơi.
+     * Khi tải lại trang, phiên cũ đóng sau phiên mới nên không được xóa nhầm mục của phiên mới.
+     */
+    public boolean removeOnlinePlayerBySessionId(String sessionId) {
         OnlinePlayer player = onlinePlayersBySessionId.remove(sessionId);
-        if (player != null) {
-            onlinePlayersByUsername.remove(player.getUsername());
+        if (player == null) {
+            return false;
+        }
+        boolean current = onlinePlayersByUsername.remove(player.getUsername(), player);
+        if (current) {
             log.info("[STATUS] [OFFLINE] {} - SessionId: {}", player.getUsername(), sessionId);
         }
+        return current;
+    }
+
+    /** Trạng thái hiện tại của người đang online; empty nếu không có trong danh sách online. */
+    public Optional<PlayerStatus> statusOf(String username) {
+        OnlinePlayer onlinePlayer = onlinePlayersByUsername.get(username);
+        return onlinePlayer == null ? Optional.empty() : Optional.ofNullable(onlinePlayer.getStatus());
     }
 
     public boolean isPlayerOnline(String username) {
@@ -92,13 +106,13 @@ public class PlayerService {
 
     public boolean canBeChallenged(String username) {
         OnlinePlayer onlinePlayer = onlinePlayersByUsername.get(username);
-        log.info("[BE-31] Checking if player can be challenged - Username: {}", username);
-        log.info("[BE-31.1] Player exists in online list: {}", onlinePlayer != null);
+        log.debug("[BE-31] Checking if player can be challenged - Username: {}", username);
+        log.debug("[BE-31.1] Player exists in online list: {}", onlinePlayer != null);
         if (onlinePlayer != null) {
-            log.info("[BE-31.2] Player status: {}", onlinePlayer.getStatus());
+            log.debug("[BE-31.2] Player status: {}", onlinePlayer.getStatus());
         }
         boolean canBeChallenged = onlinePlayer != null && onlinePlayer.getStatus() == PlayerStatus.ONLINE;
-        log.info("[BE-31.3] Can be challenged: {}", canBeChallenged);
+        log.debug("[BE-31.3] Can be challenged: {}", canBeChallenged);
         return canBeChallenged;
     }
 
@@ -108,7 +122,7 @@ public class PlayerService {
         if (onlinePlayer != null) {
             PlayerStatus oldStatus = onlinePlayer.getStatus();
             onlinePlayer.setStatus(status);
-            log.info("[STATUS] Updated in-memory status - [{}] {} (was: {})", status, username, oldStatus);
+            log.debug("[STATUS] Updated in-memory status - [{}] {} (was: {})", status, username, oldStatus);
         } else {
             log.warn("[STATUS] Cannot update status - Player not found in online list: {}", username);
         }
@@ -121,11 +135,11 @@ public class PlayerService {
             .collect(Collectors.toList());
     }
 
+    /** Người đang online, gồm cả người đang trong trận (IN_GAME) để client hiển thị nhãn "Đang chơi". */
     public List<OnlinePlayer> getOnlinePlayers() {
         List<OnlinePlayer> players = onlinePlayersByUsername.values().stream()
-            .filter(p -> p.getStatus() == PlayerStatus.ONLINE)
             .collect(Collectors.toList());
-        log.info("[STATUS] Current online players: {}", 
+        log.debug("[STATUS] Current online players: {}", 
             players.stream()
                 .map(p -> String.format("[%s] %s", p.getStatus(), p.getUsername()))
                 .collect(Collectors.joining(", ")));
