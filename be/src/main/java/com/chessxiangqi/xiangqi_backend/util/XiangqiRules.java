@@ -106,7 +106,8 @@ public final class XiangqiRules {
         return side == RED ? BLACK : RED;
     }
 
-    private static List<Move> pseudoLegalMoves(String board, char side) {
+    /** Nước đi theo luật từng quân, chưa lọc việc tự chiếu / đối mặt tướng. */
+    public static List<Move> pseudoLegalMoves(String board, char side) {
         List<Move> moves = new ArrayList<>();
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
@@ -254,7 +255,8 @@ public final class XiangqiRules {
         return new int[] {idx % WIDTH, idx / WIDTH};
     }
 
-    private static char owner(char piece) {
+    /** Bên sở hữu quân: 'r' cho chữ thường, 'b' cho chữ hoa. */
+    public static char owner(char piece) {
         return Character.isUpperCase(piece) ? BLACK : RED;
     }
 

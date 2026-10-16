@@ -29,12 +29,14 @@ import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
 import com.chessxiangqi.xiangqi_backend.repository.PlayerMatchRepository;
 import com.chessxiangqi.xiangqi_backend.service.AIGameService;
 import com.chessxiangqi.xiangqi_backend.service.ChallengeService;
+import com.chessxiangqi.xiangqi_backend.service.GameSessionService;
 import com.chessxiangqi.xiangqi_backend.service.MatchService;
 import com.chessxiangqi.xiangqi_backend.service.MoveService;
 import com.chessxiangqi.xiangqi_backend.service.PlayerMatchService;
 import com.chessxiangqi.xiangqi_backend.service.PlayerService;
 import com.chessxiangqi.xiangqi_backend.service.WebSocketService;
 import com.chessxiangqi.xiangqi_backend.util.BoardChecker;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +74,9 @@ public class WebSocketController {
 
     @Autowired
     private AIGameService aiGameService;
+
+    @Autowired
+    private GameSessionService gameSessionService;
 
     @MessageMapping("/user.connect")
     public void connectUser(@Payload String username, SimpMessageHeaderAccessor headerAccessor) {
@@ -273,7 +278,30 @@ public class WebSocketController {
     }
 
     @MessageMapping("/match.{matchId}.move")
-    public void handleMove(@Payload String moveData, @DestinationVariable String matchId) {
+    public void handleMove(@Payload String moveData, @DestinationVariable String matchId,
+                           SimpMessageHeaderAccessor headerAccessor) {
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        Optional<Match> matchOpt = matchService.getMatchById(matchId);
+        if (matchOpt.isPresent() && isAIMatch(matchOpt.get())) {
+            handleAIMove(moveData, matchId);
+            return;
+        }
+        try {
+            // Server tự kiểm tra lượt, người chơi và luật; client chỉ gửi tọa độ
+            JsonNode node = objectMapper.readTree(moveData);
+            gameSessionService.makeMove(matchId, username,
+                node.path("fromX").asInt(-1), node.path("fromY").asInt(-1),
+                node.path("toX").asInt(-1), node.path("toY").asInt(-1));
+        } catch (GameSessionService.GameActionException e) {
+            gameSessionService.sendError(username, e.getMessage());
+        } catch (Exception e) {
+            log.error("Error handling move: {}", e.getMessage());
+            gameSessionService.sendError(username, "Nước đi không hợp lệ");
+        }
+    }
+
+    /** Nước đi trong trận với AI: giữ nguyên luồng cũ, không thuộc phạm vi cải thiện đợt này. */
+    private void handleAIMove(String moveData, String matchId) {
         try {
             // 1. Parse dữ liệu từ FE
             Map<String, Object> move = new ObjectMapper().readValue(moveData, Map.class);
@@ -512,7 +540,11 @@ public class WebSocketController {
         challengeService.sendChallenge(fromUsername, targetUsername);
     }
 
-    // Helper method to calculate Elo change
+    private boolean isAIMatch(Match match) {
+        return match.isAIGame() || "da1".equals(match.getPlayer2().getUsername());
+    }
+
+    // Helper method to calculate Elo change (chỉ còn dùng cho luồng AI)
     private int calculateEloChange(Player player1, Player player2, boolean isWinner) {
         int basePoint = 20;
         double ratio = (double) Math.max(player1.getElo(), player2.getElo()) / Math.min(player1.getElo(), player2.getElo());
@@ -532,55 +564,14 @@ public class WebSocketController {
     }
 
     @MessageMapping("/game.surrender")
-    public void handleSurrender(@Payload SurrenderRequest request) {
-        log.info("[BE-Game] Received surrender request: matchId={}, playerId={}", request.getMatchId(), request.getPlayerId());
-        
-        Optional<Match> matchOpt = matchService.getMatchById(request.getMatchId());
-        if (matchOpt.isEmpty()) {
-            log.error("[BE-Game] Surrender: Match not found: {}", request.getMatchId());
-            return;
+    public void handleSurrender(@Payload SurrenderRequest request, SimpMessageHeaderAccessor headerAccessor) {
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        log.info("[BE-Game] Received surrender request: matchId={}, username={}", request.getMatchId(), username);
+        try {
+            gameSessionService.surrender(request.getMatchId(), username);
+        } catch (GameSessionService.GameActionException e) {
+            gameSessionService.sendError(username, e.getMessage());
         }
-        
-        Match match = matchOpt.get();
-        String winnerId = match.getPlayer1().getId().equals(request.getPlayerId()) 
-            ? match.getPlayer2().getId() 
-            : match.getPlayer1().getId();
-            
-        // Gửi thông báo kết thúc trận đấu
-        Map<String, Object> response = new HashMap<>();
-        response.put("type", "END_GAME");
-        response.put("winner", match.getPlayer1().getId().equals(winnerId) ? "red" : "black");
-        response.put("reason", "SURRENDER");
-        response.put("player1", match.getPlayer1());
-        response.put("player2", match.getPlayer2());
-        
-        // Tính toán Elo change
-        int player1EloChange = calculateEloChange(match.getPlayer1(), match.getPlayer2(), 
-            match.getPlayer1().getId().equals(winnerId));
-        int player2EloChange = calculateEloChange(match.getPlayer2(), match.getPlayer1(), 
-            match.getPlayer2().getId().equals(winnerId));
-            
-        response.put("player1EloChange", player1EloChange);
-        response.put("player2EloChange", player2EloChange);
-        
-        // Cập nhật Elo cho người chơi
-        playerService.updatePlayerElo(match.getPlayer1().getId(), player1EloChange);
-        playerService.updatePlayerElo(match.getPlayer2().getId(), player2EloChange);
-        
-        // Cập nhật trạng thái trận đấu
-        match.setEndDate(new Date());
-        match.setWinner(match.getPlayer1().getId().equals(winnerId) ? match.getPlayer1() : match.getPlayer2());
-        matchService.updateMatch(match);
-        
-        // Cập nhật trạng thái người chơi
-        playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
-        playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
-        
-        // Gửi thông báo kết thúc trận đấu
-        messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", response);
-        
-        // Gửi danh sách online mới
-        messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
     }
 
     @MessageMapping("/game.drawOffer")
@@ -621,7 +612,8 @@ public class WebSocketController {
     }
 
     @MessageMapping("/game.drawResponse") 
-    public void handleDrawResponse(@Payload DrawResponseRequest request) {
+    public void handleDrawResponse(@Payload DrawResponseRequest request, SimpMessageHeaderAccessor headerAccessor) {
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
         log.info("[BE-Game] Received draw response: matchId={}, playerId={}, accepted={}", 
             request.getMatchId(), request.getPlayerId(), request.isAccepted());
             
@@ -637,28 +629,12 @@ public class WebSocketController {
             : match.getPlayer1().getId();
             
         if (request.isAccepted()) {
-            // Cập nhật trạng thái match thành hòa
-            match.setEndDate(new Date());
-            match.setWinner(null); // Hòa cờ không có người thắng
-            matchService.updateMatch(match);
-            
-            // Cập nhật trạng thái người chơi về ONLINE
-            playerService.updatePlayerStatus(match.getPlayer1().getUsername(), PlayerStatus.ONLINE);
-            playerService.updatePlayerStatus(match.getPlayer2().getUsername(), PlayerStatus.ONLINE);
-            
-            // Gửi thông báo kết thúc trận đấu hòa
-            Map<String, Object> endGameMsg = new HashMap<>();
-            endGameMsg.put("type", "END_GAME");
-            endGameMsg.put("winner", "DRAW");
-            endGameMsg.put("player1", match.getPlayer1());
-            endGameMsg.put("player2", match.getPlayer2());
-            endGameMsg.put("player1EloChange", 0); // Hòa cờ không thay đổi Elo
-            endGameMsg.put("player2EloChange", 0);
-            
-            messagingTemplate.convertAndSend("/topic/match." + request.getMatchId() + ".end", endGameMsg);
-            
-            // Gửi danh sách online mới
-            messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
+            // Hòa cờ: kết thúc qua GameSessionService để thống nhất thống kê và Elo
+            try {
+                gameSessionService.acceptDraw(request.getMatchId(), username);
+            } catch (GameSessionService.GameActionException e) {
+                gameSessionService.sendError(username, e.getMessage());
+            }
         } else {
             // Gửi thông báo từ chối hòa cờ đến đối thủ
             Map<String, Object> response = new HashMap<>();
