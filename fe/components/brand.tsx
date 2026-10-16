@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // Logo: quân "帥" trong đĩa gỗ
 export function BrandMark({ size = 36 }: { size?: number }) {
@@ -50,7 +51,10 @@ export function PageHeader({
         </Link>
       </Button>
       <h1 className="font-display text-3xl font-bold leading-none">{title}</h1>
-      {action && <div className="ml-auto">{action}</div>}
+      <div className="ml-auto flex items-center gap-1">
+        {action}
+        <ThemeToggle />
+      </div>
     </header>
   );
 }

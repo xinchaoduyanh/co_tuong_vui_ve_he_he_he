@@ -10,6 +10,7 @@ import { User } from "@/lib/types/user";
 import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { MenuRow, Wordmark } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
   const router = useRouter();
@@ -39,10 +40,13 @@ export default function Home() {
     <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
       <header className="rise flex items-center justify-between" style={{ ["--i" as any]: 0 }}>
         <Wordmark />
-        <Button variant="ghost" size="sm" onClick={handleLogout}>
-          <LogOut />
-          Thoát
-        </Button>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <LogOut />
+            Thoát
+          </Button>
+        </div>
       </header>
 
       <section className="rise mt-10 flex items-end justify-between gap-4" style={{ ["--i" as any]: 1 }}>

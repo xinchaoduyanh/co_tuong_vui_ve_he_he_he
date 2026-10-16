@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { PlayerAvatar } from "@/components/player-avatar";
+import { PieceBadge } from "@/components/board/seal";
 
-// Thanh người chơi: avatar, tên, Elo, bên cờ và đồng hồ. Bên đang đến lượt có viền chu sa và chấm nhấp nháy.
+// Bảng người chơi kiểu khung gỗ sơn mài: huy hiệu quân bên cờ, tên, Elo, đồng hồ.
+// Bên đang đến lượt có viền chu sa và huy hiệu phát sáng.
 export function PlayerBar({
   name,
   elo,
@@ -19,26 +20,21 @@ export function PlayerBar({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-        active ? "bg-secondary ring-1 ring-primary/70" : "bg-card"
+      className={`panel-lacquer panel-frame flex items-center gap-3 rounded-lg px-3 py-2.5 transition-shadow ${
+        active ? "xq-bar-active" : ""
       }`}
       aria-label={active ? `${name}, đang đến lượt` : name ?? undefined}
     >
-      <PlayerAvatar
-        name={name}
-        className="h-11 w-11 shrink-0"
-        ringColor={side === "r" ? "#C0281B" : "#4A4A4A"}
-      />
+      <PieceBadge side={side} size={46} glow={active} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 leading-tight">
-          {active && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden />}
-          <span className="truncate font-semibold">{name}</span>
-          {isMe && <span className="shrink-0 rounded-sm bg-foreground/10 px-1.5 text-xs font-medium">Bạn</span>}
-        </p>
-        <p className="mt-0.5 truncate text-sm text-muted-foreground">
-          <span className="tabular">Elo {elo ?? "—"}</span>
-          {" · "}
-          {side === "r" ? "Quân đỏ" : "Quân đen"}
+        <p className="truncate font-display text-lg font-semibold leading-tight">{name}</p>
+        <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+          {isMe && (
+            <span className="shrink-0 -rotate-3 rounded-[3px] bg-primary px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
+              Bạn
+            </span>
+          )}
+          <span className="tabular truncate">Elo {elo ?? "—"}</span>
         </p>
       </div>
       {clock}

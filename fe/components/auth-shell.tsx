@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import { PalaceScene } from "@/components/board/palace-scene";
 import { Wordmark } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // Khung trang đăng nhập/đăng ký: trái là cảnh cờ, phải là form (xếp một cột trên điện thoại)
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <div className="mx-auto grid min-h-dvh w-full max-w-5xl grid-cols-1 items-center gap-10 px-5 py-8 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+    <div className="relative mx-auto grid min-h-dvh w-full max-w-5xl grid-cols-1 items-center gap-10 px-5 py-8 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+      <div className="absolute right-3 top-3">
+        <ThemeToggle />
+      </div>
       <div className="rise hidden lg:block">
         <Wordmark />
         <h2 className="mt-8 font-display text-5xl font-bold leading-[1.05]">

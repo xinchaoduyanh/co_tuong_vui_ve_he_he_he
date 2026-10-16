@@ -88,6 +88,83 @@
 @keyframes xq-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 .rise { animation: xq-rise 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
 
+/* Nền trang: tranh thủy mặc do agy sinh (public/fx). Thiếu ảnh thì chỉ còn màu nền trơn. */
+:root { --page-bg: url("/fx/bg-light.jpg"); --page-bg-opacity: 0.55; }
+.dark { --page-bg: url("/fx/bg-dark.jpg"); --page-bg-opacity: 0.8; }
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--page-bg);
+  background-size: cover;
+  background-position: center;
+  opacity: var(--page-bg-opacity);
+}
+
+/* Bảng gỗ sơn mài: nền sơn, hai nét vàng đồng viền kép như khung tranh */
+.panel-lacquer {
+  background-color: hsl(var(--card));
+  background-image: linear-gradient(hsl(var(--card) / 0.9), hsl(var(--card) / 0.9)), url("/fx/lacquer-panel.jpg");
+  background-size: auto, 220px;
+}
+.panel-frame {
+  position: relative;
+  box-shadow: 0 0 0 1px hsl(40 45% 48% / 0.4), 0 14px 30px -18px rgb(0 0 0 / 0.7);
+}
+.panel-frame::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid hsl(40 45% 52% / 0.22);
+  border-radius: 0.3rem;
+  pointer-events: none;
+}
+
+/* Lượt đi */
+@keyframes xq-turn-glow {
+  0%, 100% { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.7), 0 0 14px -4px hsl(var(--primary) / 0.35); }
+  50% { box-shadow: 0 0 0 1.5px hsl(var(--primary)), 0 0 30px -4px hsl(var(--primary) / 0.7); }
+}
+@keyframes xq-pulse-text { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
+@keyframes xq-dots {
+  0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+}
+.xq-turn-mine { animation: xq-turn-glow 1.6s ease-in-out infinite; }
+.xq-turn-text { text-shadow: 0 0 20px hsl(var(--primary) / 0.6); animation: xq-pulse-text 1.6s ease-in-out infinite; }
+.xq-dots::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: xq-dots 1.4s steps(1, end) infinite; }
+.xq-bar-active {
+  box-shadow: 0 0 0 1.5px hsl(var(--primary)), 0 0 28px -6px hsl(var(--primary) / 0.6);
+}
+@keyframes xq-badge { 0%, 100% { filter: drop-shadow(0 0 2px hsl(var(--primary) / 0.5)); } 50% { filter: drop-shadow(0 0 9px hsl(var(--primary) / 0.95)); } }
+.xq-badge-glow { animation: xq-badge 1.6s ease-in-out infinite; }
+
+/* Quân cờ trên bàn (SVG: px = đơn vị ô) */
+@keyframes xq-glow { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+.xq-glow-mine { stroke: #F59E0B; animation: xq-glow 1.5s ease-in-out infinite; }
+.xq-glow-theirs { stroke: #D8432E; animation: xq-glow 2.2s ease-in-out infinite; opacity: 0.5; }
+.xq-lifted { transform-box: fill-box; transform-origin: center; transform: translateY(-0.06px) scale(1.1); transition: transform 0.15s ease-out; }
+@keyframes xq-enter { from { opacity: 0; transform: translateY(-0.7px) scale(1.3); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.xq-enter { transform-box: fill-box; transform-origin: center; animation: xq-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; animation-delay: calc(var(--d, 0) * 16ms); }
+@keyframes xq-dotpulse { 0%, 100% { transform: scale(0.85); } 50% { transform: scale(1.12); } }
+.xq-dot { transform-box: fill-box; transform-origin: center; animation: xq-dotpulse 1.4s ease-in-out infinite; }
+@keyframes xq-landring { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
+.xq-landring { transform-box: fill-box; transform-origin: center; animation: xq-landring 0.55s ease-out forwards; pointer-events: none; }
+
+/* Chiếu tướng: bàn cờ nháy đỏ và đóng dấu 將軍 */
+@keyframes xq-flash { from { opacity: 1; } to { opacity: 0; } }
+.xq-flash { animation: xq-flash 0.9s ease-out forwards; pointer-events: none; background: radial-gradient(circle at center, transparent 35%, hsl(var(--primary) / 0.55) 100%); }
+@keyframes xq-stamp {
+  0% { opacity: 0; transform: scale(2.4) rotate(-14deg); }
+  18% { opacity: 1; transform: scale(1) rotate(-7deg); }
+  75% { opacity: 1; transform: scale(1) rotate(-7deg); }
+  100% { opacity: 0; transform: scale(1.04) rotate(-7deg); }
+}
+.xq-stamp { animation: xq-stamp 1.5s ease-out forwards; }
+@keyframes xq-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-3px); } 40% { transform: translateX(3px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+.xq-shake { animation: xq-shake 0.4s ease-in-out; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

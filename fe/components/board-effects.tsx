@@ -61,3 +61,24 @@ export function CaptureBurst({ burst }: { burst: Burst }) {
     </g>
   );
 }
+
+// Vòng sóng vàng lan ra khi quân hạ xuống ô đến
+export function LandRing({ x, y }: { x: number; y: number }) {
+  return (
+    <circle className="xq-landring" cx={x} cy={y} r="0.42" fill="none" stroke="#E3B65B" strokeWidth="0.06" />
+  );
+}
+
+// Lớp phủ HTML khi chiếu tướng: viền đỏ nháy một lần và con dấu 將軍
+export function CheckOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10" aria-hidden>
+      <div className="xq-flash absolute inset-0" />
+      <div className="absolute inset-0 grid place-items-center">
+        <span className="xq-stamp font-han rounded-md border-[5px] border-primary bg-background/55 px-4 py-1 text-6xl font-bold leading-tight text-primary sm:text-7xl">
+          將軍
+        </span>
+      </div>
+    </div>
+  );
+}

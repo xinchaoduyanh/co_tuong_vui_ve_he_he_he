@@ -34,7 +34,12 @@ import {
   BoardEffectsStyles,
   Burst,
   CaptureBurst,
+  CheckOverlay,
+  LandRing,
 } from "@/components/board-effects";
+import { TurnBanner } from "@/components/board/turn-banner";
+import { Seal } from "@/components/board/seal";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // "p 0,3 -> 0,4" -> "Tốt đỏ: cột 1 hàng 4 → cột 1 hàng 5" (chữ thường là quân đỏ)
 const PIECE_NAMES: Record<string, string> = {
@@ -66,6 +71,14 @@ export default function GameBoard() {
   } | null>(null);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const prevBoardRef = useRef<string | null>(null);
+  // Tăng mỗi khi có nước chiếu: kích hoạt nháy đỏ và dấu 將軍
+  const [checkPulse, setCheckPulse] = useState(0);
+  // Vài giây đầu: quân lần lượt rơi vào bàn
+  const [intro, setIntro] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setIntro(false), 2200);
+    return () => clearTimeout(t);
+  }, []);
   const fxId = useRef(0);
   const params = useParams();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -144,6 +157,7 @@ export default function GameBoard() {
         }
         if (data.isCheck && !data.isCheckmate) {
           setTimeout(() => playSound("check", soundRef.current), 250);
+          setCheckPulse((n) => n + 1);
         }
       }
       prevBoardRef.current = data.boardState;
@@ -764,17 +778,22 @@ export default function GameBoard() {
 
   const actionButtons = (
     <>
-      <Button variant="outline" className="flex-1" onClick={handleDrawRequest} disabled={actionsDisabled}>
-        <Handshake />
+      <Button
+        variant="outline"
+        className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-[#B9863A]/80"
+        onClick={handleDrawRequest}
+        disabled={actionsDisabled}
+      >
+        <Seal char="和" size={24} tilt={-5} />
         Cầu hòa
       </Button>
       <Button
         variant="outline"
-        className="flex-1 border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
+        className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-primary"
         onClick={handleSurrender}
         disabled={gameOver}
       >
-        <Flag />
+        <Seal char="降" size={24} tilt={4} />
         Đầu hàng
       </Button>
     </>
@@ -801,6 +820,7 @@ export default function GameBoard() {
             <Bot />
             <span className="hidden sm:inline">Chơi với máy</span>
           </Button>
+          <ThemeToggle />
           <Button
             variant="ghost"
             size="icon"
@@ -814,17 +834,25 @@ export default function GameBoard() {
 
       <div className="lg:grid lg:grid-cols-[minmax(0,640px)_minmax(300px,1fr)] lg:items-start lg:gap-10">
         <section aria-label="Bàn cờ" className="mx-auto w-full max-w-[640px]">
+          {!gameOver && myColor && (
+            <div className="mb-3">
+              <TurnBanner
+                mine={turn === myColor}
+                side={turn}
+                opponentName={myColor === "r" ? blackName : redName}
+              />
+            </div>
+          )}
+
           <div className="mb-3 lg:hidden">{redBar}</div>
 
           <div className="relative overflow-hidden rounded-xl shadow-[0_28px_60px_-28px_hsl(150_14%_2%/0.9)]">
             {isCheck && !isCheckmate && !gameOver && (
-              <div
-                role="alert"
-                className="pointer-events-none absolute inset-x-0 top-3 z-10 mx-auto w-fit rounded-md bg-primary px-4 py-1.5 font-display text-lg font-bold text-primary-foreground shadow-lg"
-              >
-                {turn === myColor ? "Chiếu tướng! Tướng bạn đang bị chiếu" : "Chiếu tướng đối thủ!"}
-              </div>
+              <span role="alert" className="sr-only">
+                {turn === myColor ? "Chiếu tướng! Tướng của bạn đang bị chiếu" : "Bạn đã chiếu tướng đối thủ"}
+              </span>
             )}
+            {checkPulse > 0 && !gameOver && <CheckOverlay key={checkPulse} />}
             <div className="relative w-full" style={{ aspectRatio: "10 / 11" }}>
             <svg
               ref={svgRef}
@@ -860,6 +888,7 @@ export default function GameBoard() {
                       cx={move.x}
                       cy={move.y}
                       r="0.3"
+                      className="xq-dot"
                       fill="#3FA37F"
                       fillOpacity="0.5"
                       stroke="#3FA37F"
@@ -912,7 +941,7 @@ export default function GameBoard() {
                     return (
                       <g
                         key={`piece-${piece.type}-${piece.color}-${piece.x}-${piece.y}`}
-                        className={justMoved ? "xq-slide" : undefined}
+                        className={[justMoved ? "xq-slide" : "", intro ? "xq-enter" : ""].filter(Boolean).join(" ") || undefined}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (turn === myColor && piece.color === myColor) {
@@ -930,6 +959,7 @@ export default function GameBoard() {
                           }
                         }}
                         style={{
+                          ["--d" as any]: pieces.indexOf(piece),
                           ...(justMoved
                             ? ({
                                 ["--dx" as any]: `${lastMove.fromX - lastMove.toX}px`,
@@ -948,7 +978,14 @@ export default function GameBoard() {
                               : "default",
                         }}
                       >
-                        <PieceDisc x={piece.x} y={piece.y} color={piece.color} type={piece.type} />
+                        <PieceDisc
+                          x={piece.x}
+                          y={piece.y}
+                          color={piece.color}
+                          type={piece.type}
+                          glow={!gameOver && piece.color === turn ? (turn === myColor ? "mine" : "theirs") : false}
+                          lifted={!!isSelected}
+                        />
                         {/* Selected piece indicator */}
                         {isSelected && (
                           <circle
@@ -993,6 +1030,7 @@ export default function GameBoard() {
                       </g>
                     );
                   })}
+              {lastMove && <LandRing key={`land-${lastMove.id}`} x={lastMove.toX} y={lastMove.toY} />}
               {/* Hiệu ứng ăn quân (vẽ trên cùng) */}
               {bursts.map((b) => (
                 <CaptureBurst key={b.id} burst={b} />
@@ -1006,9 +1044,12 @@ export default function GameBoard() {
 
         <aside className="hidden flex-col gap-3 lg:flex" aria-label="Thông tin trận">
           {redBar}
-          <div className="rounded-lg bg-card px-4 py-3">
-            <p className="text-sm text-muted-foreground">Nước vừa đi</p>
-            <p className="tabular mt-0.5 min-h-[1.5rem] font-medium">{lastMoveText ?? "Chưa có nước đi"}</p>
+          <div className="panel-lacquer panel-frame flex items-center gap-3 rounded-lg px-4 py-3">
+            <Seal char="譜" size={32} tilt={-3} />
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Kỳ phổ · nước vừa đi</p>
+              <p className="tabular mt-0.5 min-h-[1.5rem] font-medium">{lastMoveText ?? "Chưa có nước đi"}</p>
+            </div>
           </div>
           {blackBar}
           <div className="mt-2 flex gap-2">{actionButtons}</div>

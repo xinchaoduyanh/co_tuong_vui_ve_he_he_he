@@ -47,7 +47,7 @@ export function LiveClock({ clock, side }: { clock: ClockState; side: "r" | "b" 
   }
 
   return (
-    <div className={`flex shrink-0 items-center gap-1.5 rounded-md bg-background/70 px-2.5 py-1.5 ${urgency(remaining)}`}>
+    <div className={`flex shrink-0 items-center gap-1.5 rounded-md bg-background/80 px-3 py-1.5 ring-1 ring-[#B9863A]/35 ${urgency(remaining)}`}>
       <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
       <span className="tabular text-xl font-semibold leading-none">{formatClock(remaining)}</span>
     </div>
