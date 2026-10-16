@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/api/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useWebSocket } from "@/lib/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,10 +21,10 @@ export default function OnlinePlayersPage() {
   const { data: apiOnlineUsers, isLoading, error } = useOnlinePlayers();
   const [onlineUsers, setOnlineUsers] = useState<OnlinePlayer[]>([]);
   const {
-    stompClient,
     onlineUsers: contextOnlineUsers,
-    sessionId,
     pendingChallenges,
+    sendChallenge,
+    cancelChallenge,
   } = useWebSocket();
   const user = useAuth();
   const router = useRouter();
@@ -45,29 +44,7 @@ export default function OnlinePlayersPage() {
   }, [contextOnlineUsers]);
 
   const handleChallenge = (targetUsername: string) => {
-    if (!stompClient?.connected) {
-      toast.error("Không thể kết nối đến server");
-      return;
-    }
-
-    if (!user?.user?.username || !sessionId) {
-      toast.error("Không thể gửi thách đấu: Thông tin người dùng không hợp lệ");
-      return;
-    }
-
-    console.log("[FE] Sending challenge to:", targetUsername);
-    console.log("[FE] Current sessionId:", sessionId);
-    console.log("[FE] Current user:", user?.user?.username);
-
-    stompClient.publish({
-      destination: "/app/challenge.send",
-      body: targetUsername,
-      headers: {
-        username: user?.user?.username,
-        sessionId: sessionId,
-      },
-    });
-    console.log("[FE] Challenge request sent to /app/challenge.send");
+    sendChallenge(targetUsername);
   };
 
   if (isLoading) {
@@ -121,21 +98,27 @@ export default function OnlinePlayersPage() {
                         </p>
                       </div>
                     </div>
-                    <Button
-                      onClick={() => handleChallenge(u.username)}
-                      size="sm"
-                      className="bg-amber-600 hover:bg-amber-700 text-white"
-                      disabled={
-                        u.status === "IN_GAME" ||
-                        pendingChallenges.includes(u.username)
-                      }
-                    >
-                      {u.status === "IN_GAME"
-                        ? "Đang chơi"
-                        : pendingChallenges.includes(u.username)
-                        ? "Đang chờ..."
-                        : "Thách đấu"}
-                    </Button>
+                    {pendingChallenges.includes(u.username) ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">Đang chờ...</span>
+                        <Button
+                          onClick={() => cancelChallenge(u.username)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Huỷ
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        onClick={() => handleChallenge(u.username)}
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                        disabled={u.status === "IN_GAME"}
+                      >
+                        {u.status === "IN_GAME" ? "Đang chơi" : "Thách đấu"}
+                      </Button>
+                    )}
                   </div>
                 ))}
             </div>

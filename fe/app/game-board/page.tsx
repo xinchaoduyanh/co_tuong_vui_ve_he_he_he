@@ -166,12 +166,6 @@ export default function GameBoard() {
           summary: "Kết thúc trận đấu",
           detail: "Chiếu bí! Trận đấu kết thúc.",
         });
-      } else if (data.isCheck) {
-        showNotification({
-          severity: "warn",
-          summary: "Chiếu tướng",
-          detail: "Tướng của bạn đang bị chiếu!",
-        });
       }
       // Lưu lại trạng thái mới vào localStorage
       if (data.boardState) {
@@ -764,6 +758,16 @@ export default function GameBoard() {
           </span>
         </div>
 
+        {/* Banner chiếu tướng: bên đang đến lượt bị chiếu */}
+        {isCheck && !isCheckmate && (
+          <div
+            role="alert"
+            className="mb-2 rounded-md bg-red-600 px-4 py-2 text-center font-bold text-white shadow animate-pulse"
+          >
+            {turn === myColor ? "Chiếu tướng! Tướng của bạn đang bị chiếu" : "Bạn đã chiếu tướng đối thủ!"}
+          </div>
+        )}
+
         {/* Game board container with padding */}
         <div className="relative w-full rounded-lg shadow-lg mb-2 mx-auto overflow-hidden border-8 border-amber-700">
           {/* SVG container with padding to ensure pieces aren't cut off */}
@@ -1085,6 +1089,22 @@ export default function GameBoard() {
                             pointerEvents="none"
                           />
                         )}
+                        {/* Tướng đang bị chiếu: viền đỏ nhấp nháy */}
+                        {isCheck &&
+                          !isCheckmate &&
+                          piece.type === "G" &&
+                          piece.color === turn && (
+                            <circle
+                              cx={piece.x}
+                              cy={piece.y}
+                              r="0.48"
+                              fill="none"
+                              stroke="#E53935"
+                              strokeWidth="0.08"
+                              pointerEvents="none"
+                              className="animate-pulse"
+                            />
+                          )}
                         {/* Hiệu ứng quân bị ăn */}
                         {canBeCaptured && (
                           <circle

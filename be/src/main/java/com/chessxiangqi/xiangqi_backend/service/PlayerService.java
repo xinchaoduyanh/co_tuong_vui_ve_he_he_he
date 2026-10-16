@@ -91,6 +91,12 @@ public class PlayerService {
         return current;
     }
 
+    /** Trạng thái hiện tại của người đang online; empty nếu không có trong danh sách online. */
+    public Optional<PlayerStatus> statusOf(String username) {
+        OnlinePlayer onlinePlayer = onlinePlayersByUsername.get(username);
+        return onlinePlayer == null ? Optional.empty() : Optional.ofNullable(onlinePlayer.getStatus());
+    }
+
     public boolean isPlayerOnline(String username) {
         OnlinePlayer onlinePlayer = onlinePlayersByUsername.get(username);
         boolean isOnline = onlinePlayer != null && onlinePlayer.getStatus() == PlayerStatus.ONLINE;

@@ -118,32 +118,24 @@ public class WebSocketController {
 
     @MessageMapping("/challenge")
     public void handleChallenge(ChallengeMessage message) {
-        String challengerUsername = message.getChallengerUsername();
-        String targetUsername = message.getTargetUsername();
-        
-        log.info("[BE-10] Received challenge request from {} to {}", challengerUsername, targetUsername);
-        
-        // Kiểm tra người chơi có tồn tại không
-        Optional<Player> playerOpt = playerService.getPlayerByUsername(targetUsername);
-        if (playerOpt.isEmpty() || !playerService.isPlayerOnline(targetUsername)) {
-            log.warn("[BE-11] Player {} is not online or does not exist", targetUsername);
-            return;
-        }
-
-        // Kiểm tra người chơi có thể nhận thách đấu không
-        if (!playerService.canBeChallenged(targetUsername)) {
-            log.warn("[BE-12] Player {} cannot be challenged", targetUsername);
-            return;
-        }
-
-        log.info("[BE-3] Sending challenge from {} to {}", challengerUsername, targetUsername);
-        challengeService.sendChallenge(challengerUsername, targetUsername);
+        log.info("[BE-10] Received challenge request from {} to {}", message.getChallengerUsername(), message.getTargetUsername());
+        challengeService.sendChallenge(message.getChallengerUsername(), message.getTargetUsername());
     }
 
     @MessageMapping("/challenge.accept")
     public void acceptChallenge(@Payload String challengerUsername, SimpMessageHeaderAccessor headerAccessor) {
         String targetUsername = (String) headerAccessor.getSessionAttributes().get("username");
         log.info("[BE-4] Challenge accepted by {} from {}", targetUsername, challengerUsername);
+
+        // Lời mời đã hết hạn hoặc đã bị huỷ: không cho vào trận
+        if (!challengeService.isPending(challengerUsername, targetUsername)) {
+            Map<String, Object> expired = new HashMap<>();
+            expired.put("type", "CHALLENGE_ERROR");
+            expired.put("code", "CHALLENGE_EXPIRED");
+            expired.put("message", "Lời mời đã hết hạn hoặc đã bị huỷ.");
+            messagingTemplate.convertAndSendToUser(targetUsername, "/queue/challenge", expired);
+            return;
+        }
 
         try {
             // 1. Lấy Player object từ username
@@ -260,6 +252,13 @@ public class WebSocketController {
                 errorResponse
             );
         }
+    }
+
+    @MessageMapping("/challenge.cancel")
+    public void cancelChallenge(@Payload String targetUsername, SimpMessageHeaderAccessor headerAccessor) {
+        String challengerUsername = (String) headerAccessor.getSessionAttributes().get("username");
+        log.info("[BE-CHALLENGE-CANCEL] {} cancels challenge to {}", challengerUsername, targetUsername);
+        challengeService.cancelChallenge(challengerUsername, targetUsername);
     }
 
     @MessageMapping("/challenge.reject")
@@ -529,22 +528,6 @@ public class WebSocketController {
     @MessageMapping("/challenge.send")
     public void handleChallengeSend(@Payload String targetUsername, SimpMessageHeaderAccessor headerAccessor) {
         String fromUsername = (String) headerAccessor.getSessionAttributes().get("username");
-        String sessionId = headerAccessor.getSessionId();
-
-        // Kiểm tra người chơi có tồn tại không
-        Optional<Player> playerOpt = playerService.getPlayerByUsername(targetUsername);
-        if (playerOpt.isEmpty() || !playerService.isPlayerOnline(targetUsername)) {
-            log.warn("[BE-11] Player {} is not online or does not exist", targetUsername);
-            return;
-        }
-
-        // Kiểm tra người chơi có thể nhận thách đấu không
-        if (!playerService.canBeChallenged(targetUsername)) {
-            log.warn("[BE-12] Player {} cannot be challenged", targetUsername);
-            return;
-        }
-
-        log.info("[BE-3] Sending challenge from {} to {}", fromUsername, targetUsername);
         challengeService.sendChallenge(fromUsername, targetUsername);
     }
 
