@@ -42,8 +42,11 @@ public class GameSessionService {
     /** Mất kết nối quá 60 giây thì bị xử thua (ABANDON). */
     public static final long DISCONNECT_GRACE_MS = 60_000L;
 
-    /** Chỉ coi là trận đang chơi nếu được tạo trong khoảng thời gian này (tránh trận bỏ dở cũ). */
-    private static final Duration ACTIVE_WINDOW = Duration.ofHours(2);
+    /**
+     * Chỉ coi là trận đang chơi nếu được tạo trong khoảng thời gian này (tránh trận bỏ dở cũ).
+     * Mỗi bên có 10 phút đồng hồ và chỉ bên đang đi bị trừ giờ, nên một ván không quá khoảng 20 phút.
+     */
+    private static final Duration ACTIVE_WINDOW = Duration.ofMinutes(30);
 
     @Autowired
     private MatchService matchService;
