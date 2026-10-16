@@ -213,10 +213,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         client.subscribe("/topic/users.online", (message) => {
           setOnlineUsers(JSON.parse(message.body));
         });
-        client.subscribe("/user/queue/challenge", (message) => {
+        client.subscribe(`/user/${me}/queue/challenge`, (message) => {
           onChallengeMessage(JSON.parse(message.body));
         });
-        client.subscribe("/user/queue/game.error", (message) => {
+        client.subscribe(`/user/${me}/queue/game.error`, (message) => {
           const data = JSON.parse(message.body);
           handlersRef.current.notification.showNotification({
             severity: "error",
