@@ -25,6 +25,12 @@ import {
 } from "@/components/game-result-overlay";
 import { LeaveConfirmDialog } from "@/components/leave-confirm-dialog";
 import { clearMatchStorage } from "@/lib/match-storage";
+import { playSound } from "@/lib/game-effects";
+import {
+  BoardEffectsStyles,
+  Burst,
+  CaptureBurst,
+} from "@/components/board-effects";
 
 const redSymbols = {
   G: "帥",
@@ -72,6 +78,15 @@ export default function GameBoard() {
   const [isCheckmate, setIsCheckmate] = useState(false);
   const [moveDescription, setMoveDescription] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundRef = useRef(true);
+  soundRef.current = soundEnabled;
+  // Hiệu ứng nước đi: ô đi/đến gần nhất và các đợt ăn quân đang chạy
+  const [lastMove, setLastMove] = useState<{
+    fromX: number; fromY: number; toX: number; toY: number; id: number;
+  } | null>(null);
+  const [bursts, setBursts] = useState<Burst[]>([]);
+  const prevBoardRef = useRef<string | null>(null);
+  const fxId = useRef(0);
   const params = useParams();
   const svgRef = useRef<SVGSVGElement>(null);
   const router = useRouter();
@@ -152,7 +167,29 @@ export default function GameBoard() {
     if (!stompClient || !isConnected || !matchId) return;
 
     const handleMove = (data: any) => {
-      console.log("Received move data:", data);
+      // Hiệu ứng: quân bị ăn nếu ô đến trước đó có quân
+      const prev = prevBoardRef.current;
+      const hasMoveInfo = [data.fromX, data.fromY, data.toX, data.toY].every(
+        (v) => typeof v === "number"
+      );
+      if (hasMoveInfo) {
+        fxId.current += 1;
+        const id = fxId.current;
+        setLastMove({ fromX: data.fromX, fromY: data.fromY, toX: data.toX, toY: data.toY, id });
+        const capturedChar = prev ? prev[data.toY * 9 + data.toX] : ".";
+        if (capturedChar && capturedChar !== ".") {
+          const color = capturedChar === capturedChar.toLowerCase() ? "r" : "b";
+          setBursts((list) => [...list, { id, x: data.toX, y: data.toY, color }]);
+          setTimeout(() => setBursts((list) => list.filter((b) => b.id !== id)), 1100);
+          playSound("capture", soundRef.current);
+        } else {
+          playSound("move", soundRef.current);
+        }
+        if (data.isCheck && !data.isCheckmate) {
+          setTimeout(() => playSound("check", soundRef.current), 250);
+        }
+      }
+      prevBoardRef.current = data.boardState;
       setBoardState(data.boardState);
       setTurn(data.nextTurn);
       setMoveDescription(data.moveDescription);
@@ -225,6 +262,7 @@ export default function GameBoard() {
   // Khi có trạng thái mới từ server (mở trang, kết nối lại): đồng bộ bàn cờ, chiếu và đồng hồ
   useEffect(() => {
     if (!snapshot) return;
+    prevBoardRef.current = snapshot.boardState;
     setBoardState(snapshot.boardState);
     setIsCheck(snapshot.check);
     setMoveDescription(snapshot.moveDescription ?? "");
@@ -294,6 +332,7 @@ export default function GameBoard() {
           opponentName: (isRed ? data.player2?.username : data.player1?.username) ?? null,
         });
         setIsCheck(false);
+        playSound(outcome === "lose" ? "lose" : "win", soundRef.current);
         clearMatchStorage();
       }
     });
@@ -783,6 +822,15 @@ export default function GameBoard() {
             Đầu hàng
           </Button>
           <Button
+            variant="ghost"
+            size="icon"
+            className="bg-white/80 hover:bg-white shadow-sm ml-2"
+            aria-label={soundEnabled ? "Tắt âm thanh" : "Bật âm thanh"}
+            onClick={() => setSoundEnabled((v) => !v)}
+          >
+            {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             className="text-blue-500 border-blue-500 bg-white/80 hover:bg-white shadow-sm ml-2"
@@ -1033,6 +1081,17 @@ export default function GameBoard() {
                     />
                   ))}
 
+              <BoardEffectsStyles />
+              {/* Nước đi gần nhất: ô xuất phát và ô đến */}
+              {lastMove && (
+                <g pointerEvents="none" className="xq-lastmove">
+                  <rect x={lastMove.fromX - 0.45} y={lastMove.fromY - 0.45} width="0.9" height="0.9"
+                    rx="0.12" fill="rgba(255,193,7,0.18)" stroke="#FFB300" strokeWidth="0.04" strokeDasharray="0.12,0.08" />
+                  <rect x={lastMove.toX - 0.47} y={lastMove.toY - 0.47} width="0.94" height="0.94"
+                    rx="0.14" fill="rgba(255,193,7,0.28)" stroke="#FFB300" strokeWidth="0.06" />
+                </g>
+              )}
+
               {/* Chess Pieces */}
               {pieces &&
                 pieces.length > 0 &&
@@ -1057,9 +1116,16 @@ export default function GameBoard() {
                         (m) => m.x === piece.x && m.y === piece.y
                       );
 
+                    // Quân vừa đi tới: trượt từ ô cũ sang ô mới rồi nảy nhẹ
+                    const justMoved =
+                      lastMove &&
+                      lastMove.toX === piece.x &&
+                      lastMove.toY === piece.y;
+
                     return (
                       <g
                         key={`piece-${piece.type}-${piece.color}-${piece.x}-${piece.y}`}
+                        className={justMoved ? "xq-slide" : undefined}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (turn === myColor && piece.color === myColor) {
@@ -1077,6 +1143,12 @@ export default function GameBoard() {
                           }
                         }}
                         style={{
+                          ...(justMoved
+                            ? ({
+                                ["--dx" as any]: `${lastMove.fromX - lastMove.toX}px`,
+                                ["--dy" as any]: `${lastMove.fromY - lastMove.toY}px`,
+                              } as React.CSSProperties)
+                            : {}),
                           cursor:
                             (piece.color === myColor && turn === myColor) ||
                             (selectedPiece &&
@@ -1179,6 +1251,10 @@ export default function GameBoard() {
                       </g>
                     );
                   })}
+              {/* Hiệu ứng ăn quân (vẽ trên cùng) */}
+              {bursts.map((b) => (
+                <CaptureBurst key={b.id} burst={b} />
+              ))}
             </svg>
           </div>
         </div>
