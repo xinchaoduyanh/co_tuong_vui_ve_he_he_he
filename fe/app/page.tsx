@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Swords, Monitor, History, BarChart3, LogOut, ScrollText } from "lucide-react";
+import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { handleLogout } from "@/lib/api/context/AuthContext";
 import { User } from "@/lib/types/user";
 import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 import { PlayerAvatar } from "@/components/player-avatar";
-import { MenuRow, Wordmark } from "@/components/brand";
+import { Wordmark } from "@/components/brand";
+import { BoardMenu } from "@/components/board-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CultureCard } from "@/components/culture-card";
 import { RankBadge } from "@/components/rank-badge";
@@ -75,23 +76,21 @@ export default function Home() {
         ))}
       </dl>
 
-      <Button asChild size="lg" className="rise mt-8 w-full justify-between" style={{ ["--i" as any]: 3 }}>
-        <Link href={playHref}>
-          <span>{activeMatch ? `Vào lại trận với ${activeMatch.opponent}` : "Thách đấu người chơi"}</span>
-          <Swords />
-        </Link>
-      </Button>
-
-      <nav className="rise mt-4 flex flex-col" aria-label="Chức năng" style={{ ["--i" as any]: 4 }}>
-        <MenuRow
-          href={activeMatch ? playHref : "/ai-game-board"}
-          icon={<Monitor />}
-          title={activeMatch ? "Vào lại trận đang chơi" : "Chơi với máy"}
-          hint={activeMatch ? "Hoàn thành ván hiện tại trước khi tìm ván khác" : "Luyện tập không ảnh hưởng điểm"}
+      <nav className="rise mt-8" aria-label="Chức năng" style={{ ["--i" as any]: 3 }}>
+        <BoardMenu
+          cta={{
+            href: playHref,
+            title: activeMatch ? `Vào lại trận với ${activeMatch.opponent}` : "Thách đấu",
+            hint: activeMatch ? "Hoàn thành ván hiện tại trước khi tìm ván khác" : "Mời một kỳ thủ đang online",
+            badge: activeMatch ? "Đang có trận" : undefined,
+          }}
+          pieces={[
+            { id: "ai", href: activeMatch ? playHref : "/ai-game-board", x: 1, y: 2, side: "r", type: "H", title: activeMatch ? "Vào lại trận" : "Chơi với máy", hint: "Luyện tập, không tính điểm" },
+            { id: "rank", href: "/bang-xep-hang", x: 7, y: 2, side: "r", type: "R", title: "Xếp hạng", hint: "Theo Elo và tỉ lệ thắng" },
+            { id: "history", href: "/lich-su-dau", x: 1, y: 7, side: "b", type: "A", title: "Lịch sử đấu", hint: "Các ván gần đây" },
+            { id: "culture", href: "/van-hoa", x: 7, y: 7, side: "b", type: "E", title: "Văn hóa", hint: "Quân, cổ tích, lời răn" },
+          ]}
         />
-        <MenuRow href="/lich-su-dau" icon={<History />} title="Lịch sử đấu" hint="Các ván gần đây và điểm Elo" />
-        <MenuRow href="/bang-xep-hang" icon={<BarChart3 />} title="Bảng xếp hạng" hint="Theo Elo và tỉ lệ thắng" />
-        <MenuRow href="/van-hoa" icon={<ScrollText />} title="Văn hóa cờ tướng" hint="Các quân, cổ tích và lời răn nhà cờ" />
       </nav>
 
       <CultureCard className="rise mt-10" />

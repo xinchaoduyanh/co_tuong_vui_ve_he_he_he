@@ -253,3 +253,17 @@ body::before {
     scroll-behavior: auto !important;
   }
 }
+
+/* ===== Menu bàn cờ (BoardMenu) ===== */
+@keyframes xq-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.7cqw); } }
+.xq-bob { animation: xq-bob 3.6s ease-in-out infinite; }
+@keyframes xq-flow { to { stroke-dashoffset: -0.68; } }
+.xq-flow { animation: xq-flow 1.6s linear infinite; }
+@keyframes xq-menu-glow { 0%, 100% { filter: drop-shadow(0 0 0.6cqw rgb(227 182 91 / 0.35)); } 50% { filter: drop-shadow(0 0 2cqw rgb(227 182 91 / 0.85)); } }
+.xq-menu-glow { animation: xq-menu-glow 1.8s ease-in-out infinite; }
+@keyframes xq-dot-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } to { opacity: 0.9; transform: translate(-50%, -50%) scale(1); } }
+.xq-dot-in { animation: xq-dot-in 0.22s ease-out both; }
+
+/* Gợi ý dưới nhãn chỉ hiện khi bàn đủ rộng */
+.xq-hint { display: none; }
+@container (min-width: 500px) { .xq-hint { display: block; } }
