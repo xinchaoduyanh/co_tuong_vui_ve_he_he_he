@@ -4,12 +4,11 @@ import com.chessxiangqi.xiangqi_backend.model.Player;
 
 import lombok.Data;
 
-/** Thông tin người chơi an toàn để gửi cho client (không có mật khẩu). */
+/** Thông tin công khai của người chơi gửi cho client (không có mật khẩu, email). */
 @Data
 public class PlayerPublicDto {
     private String id;
     private String username;
-    private String email;
     private int elo;
     private int totalMatches;
     private int wins;
@@ -20,7 +19,6 @@ public class PlayerPublicDto {
         PlayerPublicDto dto = new PlayerPublicDto();
         dto.setId(player.getId());
         dto.setUsername(player.getUsername());
-        dto.setEmail(player.getEmail());
         dto.setElo(player.getElo());
         dto.setTotalMatches(player.getTotalMatches());
         dto.setWins(player.getWins());
