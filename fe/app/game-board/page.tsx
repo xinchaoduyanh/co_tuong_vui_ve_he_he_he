@@ -40,6 +40,7 @@ import {
 import { TurnBanner } from "@/components/board/turn-banner";
 import { Seal } from "@/components/board/seal";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CultureCard } from "@/components/culture-card";
 
 // "p 0,3 -> 0,4" -> "Tốt đỏ: cột 1 hàng 4 → cột 1 hàng 5" (chữ thường là quân đỏ)
 const PIECE_NAMES: Record<string, string> = {
@@ -73,6 +74,14 @@ export default function GameBoard() {
   const prevBoardRef = useRef<string | null>(null);
   // Tăng mỗi khi có nước chiếu: kích hoạt nháy đỏ và dấu 將軍
   const [checkPulse, setCheckPulse] = useState(0);
+  // Nền riêng cho phòng đấu (xem globals.css: body[data-scene="match"])
+  useEffect(() => {
+    document.body.dataset.scene = "match";
+    return () => {
+      delete document.body.dataset.scene;
+    };
+  }, []);
+
   // Vài giây đầu: quân lần lượt rơi vào bàn
   const [intro, setIntro] = useState(true);
   useEffect(() => {
@@ -758,6 +767,9 @@ export default function GameBoard() {
     <PlayerBar
       name={redName}
       elo={player1?.elo}
+      wins={player1?.wins}
+      loses={player1?.loses}
+      draws={player1?.draws}
       isMe={iAmRed}
       side="r"
       active={!gameOver && turn === "r"}
@@ -768,6 +780,9 @@ export default function GameBoard() {
     <PlayerBar
       name={blackName}
       elo={player2?.elo}
+      wins={player2?.wins}
+      loses={player2?.loses}
+      draws={player2?.draws}
       isMe={iAmBlack}
       side="b"
       active={!gameOver && turn === "b"}
@@ -1053,6 +1068,7 @@ export default function GameBoard() {
           </div>
           {blackBar}
           <div className="mt-2 flex gap-2">{actionButtons}</div>
+          <CultureCard className="mt-4" />
         </aside>
       </div>
 

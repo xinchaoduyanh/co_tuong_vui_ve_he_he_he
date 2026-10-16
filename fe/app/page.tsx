@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Swords, Monitor, History, BarChart3, LogOut } from "lucide-react";
+import { Swords, Monitor, History, BarChart3, LogOut, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { handleLogout } from "@/lib/api/context/AuthContext";
 import { User } from "@/lib/types/user";
@@ -11,6 +11,8 @@ import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { MenuRow, Wordmark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CultureCard } from "@/components/culture-card";
+import { RankBadge } from "@/components/rank-badge";
 
 export default function Home() {
   const router = useRouter();
@@ -55,6 +57,7 @@ export default function Home() {
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">Xin chào</p>
             <h1 className="truncate font-display text-3xl font-bold leading-tight">{user.username}</h1>
+            <p className="mt-1 text-sm text-muted-foreground"><RankBadge elo={user.elo} /></p>
           </div>
         </div>
         <div className="text-right">
@@ -88,7 +91,10 @@ export default function Home() {
         />
         <MenuRow href="/lich-su-dau" icon={<History />} title="Lịch sử đấu" hint="Các ván gần đây và điểm Elo" />
         <MenuRow href="/bang-xep-hang" icon={<BarChart3 />} title="Bảng xếp hạng" hint="Theo Elo và tỉ lệ thắng" />
+        <MenuRow href="/van-hoa" icon={<ScrollText />} title="Văn hóa cờ tướng" hint="Các quân, cổ tích và lời răn nhà cờ" />
       </nav>
+
+      <CultureCard className="rise mt-10" />
     </div>
   );
 }

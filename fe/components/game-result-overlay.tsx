@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { Seal } from "@/components/board/seal";
+import { RESULT_PROVERBS } from "@/lib/culture";
 
 export type GameOutcome = "win" | "lose" | "draw";
 
@@ -109,6 +111,12 @@ export function GameResultOverlay({
         <p className="text-sm text-muted-foreground">
           {result.reason ? reasonLabel(result.reason) : "Kết thúc trận"}
         </p>
+        <Seal
+          char={result.outcome === "win" ? "勝" : result.outcome === "lose" ? "敗" : "和"}
+          size={44}
+          tilt={-6}
+          className="absolute right-6 top-6"
+        />
         <h2
           id="result-title"
           className={`mt-1 font-display text-5xl font-bold leading-none sm:text-6xl ${OUTCOME_COLOR[result.outcome]}`}
@@ -134,6 +142,11 @@ export function GameResultOverlay({
             )}
           </dl>
         )}
+
+        <figure className="mt-6 border-t border-border pt-4">
+          <blockquote className="font-han text-lg font-bold text-primary">{RESULT_PROVERBS[result.outcome].han}</blockquote>
+          <figcaption className="mt-1 text-sm text-muted-foreground">{RESULT_PROVERBS[result.outcome].vi}</figcaption>
+        </figure>
 
         <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={onHistory}>

@@ -10,6 +10,7 @@ import { AuthProvider } from "@/lib/api/context/AuthContext";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import { RejoinBanner } from "@/components/rejoin-banner";
 import { ActiveMatchProvider } from "@/lib/api/hooks/use-active-match";
+import { AmbientLayer } from "@/components/ambient-layer";
 const ui = Be_Vietnam_Pro({
   subsets: ["latin", "vietnamese"],
   weight: ["400", "500", "600"],
@@ -51,6 +52,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <AmbientLayer />
           <AuthProvider>
             <NotificationProvider>
               <WebSocketProvider>
