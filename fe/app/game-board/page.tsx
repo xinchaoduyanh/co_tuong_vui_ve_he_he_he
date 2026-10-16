@@ -97,8 +97,10 @@ export default function GameBoard() {
     turn,
     setTurn,
     isLoading,
+    error,
     makeMove,
     players,
+    snapshot,
   } = useGameState();
 
   // Xác định màu cờ của mình
@@ -221,6 +223,45 @@ export default function GameBoard() {
     const elapsed = clock.turn === side ? clockNow - clock.receivedAt : 0;
     return Math.max(0, base - elapsed);
   };
+
+  // Khi có trạng thái mới từ server (mở trang, kết nối lại): đồng bộ bàn cờ, chiếu và đồng hồ
+  useEffect(() => {
+    if (!snapshot) return;
+    setBoardState(snapshot.boardState);
+    setIsCheck(snapshot.check);
+    setMoveDescription(snapshot.moveDescription ?? "");
+    setClock({
+      redMs: snapshot.redTimeMs,
+      blackMs: snapshot.blackTimeMs,
+      turn: snapshot.turn,
+      receivedAt: Date.now(),
+    });
+  }, [snapshot]);
+
+  // Thông báo khi đối thủ mất kết nối hoặc quay lại
+  useEffect(() => {
+    if (!stompClient || !isConnected || !matchId) return;
+    const sub = stompClient.subscribe(`/topic/match.${matchId}.presence`, (msg) => {
+      const data = JSON.parse(msg.body);
+      if (data.username === user?.username) return;
+      if (data.status === "DISCONNECTED") {
+        showNotification({
+          severity: "warn",
+          summary: "Đối thủ mất kết nối",
+          detail: `${data.username} mất kết nối. Nếu không quay lại trong 60 giây, trận sẽ kết thúc.`,
+          life: 8000,
+        });
+      } else if (data.status === "RECONNECTED") {
+        showNotification({
+          severity: "success",
+          summary: "Đối thủ đã kết nối lại",
+          detail: `${data.username} đã quay lại trận.`,
+          life: 4000,
+        });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [stompClient, isConnected, matchId, user?.username, showNotification]);
 
   useEffect(() => {
     if (!stompClient || !isConnected || !matchId) return;
@@ -636,6 +677,17 @@ export default function GameBoard() {
     setShowDrawResponseDialog(false);
     setDrawRequestFrom(null);
   };
+
+  if (error && !isLoading) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen gap-4 bg-gradient-to-b from-amber-50 to-amber-100">
+        <div className="text-amber-800">{error.message}</div>
+        <Link href="/" className="text-amber-700 underline">
+          Về trang chủ
+        </Link>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

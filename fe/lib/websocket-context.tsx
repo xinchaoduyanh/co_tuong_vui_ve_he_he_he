@@ -136,20 +136,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           const sessionId = await sessionPromise;
           console.log("[FE] Got sessionId, proceeding with setup:", sessionId);
 
-          // Kiểm tra xem người chơi có đang trong game không
-          const matchId = localStorage.getItem("matchId");
-          if (matchId) {
-            console.log("[FE] Player is in game, updating status to IN_GAME");
-            client.publish({
-              destination: "/app/user.status",
-              body: JSON.stringify({ status: "IN_GAME" }),
-              headers: {
-                username: username,
-                sessionId: sessionId,
-              },
-            });
-          }
-
           // Đăng ký lắng nghe danh sách người chơi online
           client.subscribe("/topic/users.online", (message) => {
             console.log("[FE] Received online users update:", message.body);

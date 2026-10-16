@@ -100,7 +100,6 @@ export default function OnlinePlayersPage() {
             <div className="space-y-2">
               {onlineUsers
                 .filter((u) => u.username !== user?.user?.username)
-                .filter((u) => u.status !== "IN_GAME")
                 .map((u) => (
                   <div
                     key={u.id || u.username}

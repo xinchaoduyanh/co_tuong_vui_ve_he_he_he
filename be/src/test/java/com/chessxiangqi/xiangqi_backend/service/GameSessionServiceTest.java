@@ -1,6 +1,9 @@
 package com.chessxiangqi.xiangqi_backend.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -12,6 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.LongSupplier;
 
@@ -25,6 +29,7 @@ import com.chessxiangqi.xiangqi_backend.model.GameSession;
 import com.chessxiangqi.xiangqi_backend.model.Match;
 import com.chessxiangqi.xiangqi_backend.model.Move;
 import com.chessxiangqi.xiangqi_backend.model.Player;
+import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
 import com.chessxiangqi.xiangqi_backend.repository.PlayerMatchRepository;
 import com.chessxiangqi.xiangqi_backend.service.GameSessionService.GameActionException;
 
@@ -77,6 +82,9 @@ class GameSessionServiceTest {
         when(playerService.getPlayerById("b1")).thenReturn(Optional.of(black));
         when(playerMatchRepository.findByMatchId("m1")).thenReturn(List.of());
         when(playerService.getOnlinePlayers()).thenReturn(List.of());
+        when(playerService.getPlayerByUsername("p1")).thenReturn(Optional.of(red));
+        when(playerService.getPlayerByUsername("p2")).thenReturn(Optional.of(black));
+        when(matchService.findActiveByPlayerId(anyString(), any())).thenReturn(List.of(match));
     }
 
     /** Nạp trận với bàn cờ cho trước và bên đi đầu tiên. */
@@ -209,6 +217,40 @@ class GameSessionServiceTest {
         service.checkTimeouts();
         assertEquals("TIMEOUT", match.getResult());
         assertEquals(black, match.getWinner());
+    }
+
+    @Test
+    void disconnectOverGraceAbandonsMatch() {
+        startWith(INITIAL_BOARD, "r");
+        service.onPlayerDisconnected("p1");
+        nowMs += GameSessionService.DISCONNECT_GRACE_MS + 1;
+        service.checkTimeouts();
+        assertEquals("ABANDON", match.getResult());
+        assertEquals(black, match.getWinner());
+    }
+
+    @Test
+    void reconnectWithinGraceKeepsMatch() {
+        startWith(INITIAL_BOARD, "r");
+        service.onPlayerDisconnected("p1");
+        nowMs += 30_000;
+        service.onPlayerConnected("p1");
+        nowMs += GameSessionService.DISCONNECT_GRACE_MS;
+        service.checkTimeouts();
+        assertFalse(service.getSession("m1").orElseThrow().isEnded());
+        assertNull(match.getResult());
+        verify(playerService).updatePlayerStatus("p1", PlayerStatus.IN_GAME);
+    }
+
+    @Test
+    void snapshotDescribesCurrentState() {
+        startWith(INITIAL_BOARD, "r");
+        Map<String, Object> snapshot = service.snapshot("m1").orElseThrow();
+        assertEquals("ACTIVE", snapshot.get("status"));
+        assertEquals("r", snapshot.get("turn"));
+        assertEquals(INITIAL_BOARD, snapshot.get("boardState"));
+        assertEquals(GameSessionService.TURN_LIMIT_MS, snapshot.get("redTimeMs"));
+        assertNotNull(((Map<?, ?>) snapshot.get("players")).get("red"));
     }
 
     @Test

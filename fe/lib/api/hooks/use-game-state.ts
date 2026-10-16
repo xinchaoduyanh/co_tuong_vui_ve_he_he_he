@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/lib/websocket-context";
+import { API_BASE_URL } from "@/lib/api/config";
 
 // // Mock game state - positions of pieces on the board
 // const mockPieces = [
@@ -76,6 +77,33 @@ export function parseBoardState(boardState: string) {
   return pieces;
 }
 
+export type PlayerInfo = {
+  id: string;
+  username: string;
+  elo: number;
+  wins: number;
+  loses: number;
+  draws: number;
+  totalMatches: number;
+};
+
+// Trạng thái đầy đủ của trận từ server (GET /api/matches/{id}/snapshot)
+export type GameSnapshot = {
+  matchId: string;
+  status: "ACTIVE" | "ENDED";
+  endReason: string | null;
+  winner: string | null;
+  players: { red: PlayerInfo | null; black: PlayerInfo | null };
+  boardState: string;
+  turn: "r" | "b";
+  check: boolean;
+  moveDescription: string | null;
+  redTimeMs: number;
+  blackTimeMs: number;
+  serverTime: number;
+  disconnected: { red: boolean; black: boolean };
+};
+
 export function useGameState() {
   const { stompClient, isConnected } = useWebSocket();
   const [players, setPlayers] = useState<any>({ red: {}, black: {} });
@@ -84,62 +112,62 @@ export function useGameState() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
-  const [player1Id, setPlayer1Id] = useState<string | null>(null);
-  const [player2Id, setPlayer2Id] = useState<string | null>(null);
-  const [player1Color, setPlayer1Color] = useState<string | null>(null);
-  const [player2Color, setPlayer2Color] = useState<string | null>(null);
   const [initialBoardState, setInitialBoardState] = useState<string>("");
   const [player1, setPlayer1] = useState<any>(null);
   const [player2, setPlayer2] = useState<any>(null);
+  const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
 
-  useEffect(() => {
-    setIsLoading(true);
-    // Đọc dữ liệu match từ localStorage
-    const matchId = localStorage.getItem("matchId");
-    const player1Str = localStorage.getItem("player1");
-    const player2Str = localStorage.getItem("player2");
-    const initialBoardState = localStorage.getItem("initialBoardState") || "";
-    let p1 = null,
-      p2 = null;
+  // Luôn lấy trạng thái từ server, không dựa vào localStorage
+  const loadSnapshot = useCallback(async (id: string) => {
     try {
-      p1 = player1Str ? JSON.parse(player1Str) : null;
-      p2 = player2Str ? JSON.parse(player2Str) : null;
-    } catch (e) {
-      p1 = null;
-      p2 = null;
+      const res = await fetch(`${API_BASE_URL}/api/matches/${id}/snapshot`);
+      const body = await res.json();
+      if (!res.ok || !body.success) {
+        throw new Error(body.message || "Không tải được trận đấu");
+      }
+      const snap: GameSnapshot = body.data;
+      const red = snap.players.red ? { ...snap.players.red, color: "r" } : null;
+      const black = snap.players.black
+        ? { ...snap.players.black, color: "b" }
+        : null;
+      setMatchId(snap.matchId);
+      setPlayer1(red);
+      setPlayer2(black);
+      setPlayers({ red, black });
+      setInitialBoardState(snap.boardState);
+      setPieces(parseBoardState(snap.boardState));
+      setTurn(snap.turn);
+      setSnapshot(snap);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("Unknown error"));
+    } finally {
+      setIsLoading(false);
     }
-    setMatchId(matchId);
-    setPlayer1(p1);
-    setPlayer2(p2);
-    setPlayer1Id(p1?.id || null);
-    setPlayer2Id(p2?.id || null);
-    setPlayer1Color(p1?.color || null);
-    setPlayer2Color(p2?.color || null);
-    setInitialBoardState(initialBoardState);
-    setPlayers({
-      red: p1 && p1.color === "r" ? p1 : p2,
-      black: p1 && p1.color === "b" ? p1 : p2,
-    });
-    if (initialBoardState && initialBoardState.length === 90) {
-      const parsedPieces = parseBoardState(initialBoardState);
-      setPieces(parsedPieces);
-    } else {
-      setPieces([]);
-    }
-    setIsLoading(false);
   }, []);
 
-  // Hàm gửi move lên BE (nếu cần)
+  // Mã trận lấy từ URL (?matchId=...), nếu không có thì dùng bản lưu từ lúc ghép trận
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("matchId") || localStorage.getItem("matchId");
+    if (!id) {
+      setError(new Error("Không có mã trận đấu"));
+      setIsLoading(false);
+      return;
+    }
+    loadSnapshot(id);
+  }, [loadSnapshot]);
+
+  // Sau khi kết nối lại, tải lại trạng thái để bù các nước đi bị lỡ
+  useEffect(() => {
+    if (isConnected && matchId) {
+      loadSnapshot(matchId);
+    }
+  }, [isConnected, matchId, loadSnapshot]);
+
   /**
    * Gửi nước đi lên backend qua WebSocket.
-   * moveData nên bao gồm các trường:
-   *   - fromX, fromY: vị trí cũ
-   *   - toX, toY: vị trí mới
-   *   - pieceType: loại quân
-   *   - color: màu quân
-   *   - moveDescription: mô tả nước đi (ví dụ: "C 1,2 -> 2,2")
-   *   - boardState: chuỗi trạng thái bàn cờ mới
-   *   - playerId: id người chơi
+   * Server chỉ cần fromX, fromY, toX, toY; các trường khác chỉ để hiển thị.
    */
   const makeMove = async (moveData: any, matchId: string) => {
     if (!stompClient || !isConnected) return false;
@@ -166,6 +194,7 @@ export function useGameState() {
     player1,
     player2,
     initialBoardState,
+    snapshot,
     setPieces,
     setTurn,
   };

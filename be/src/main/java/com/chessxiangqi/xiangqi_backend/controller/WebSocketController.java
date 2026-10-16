@@ -84,6 +84,8 @@ public class WebSocketController {
         headerAccessor.getSessionAttributes().put("username", username);
 
         playerService.addOnlinePlayer(username, sessionId);
+        // Nếu đang có trận dở thì giữ trạng thái đang chơi và báo đối thủ đã kết nối lại
+        gameSessionService.onPlayerConnected(username);
 
         log.info("Sending sessionId to user {}: {}", username, sessionId);
 
@@ -102,8 +104,14 @@ public class WebSocketController {
 
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
-        String sessionId = SimpMessageHeaderAccessor.wrap(event.getMessage()).getSessionId();
-        playerService.removeOnlinePlayerBySessionId(sessionId);
+        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.wrap(event.getMessage());
+        String sessionId = accessor.getSessionId();
+        Map<String, Object> attributes = accessor.getSessionAttributes();
+        String username = attributes == null ? null : (String) attributes.get("username");
+        boolean wasCurrentSession = playerService.removeOnlinePlayerBySessionId(sessionId);
+        if (wasCurrentSession && username != null) {
+            gameSessionService.onPlayerDisconnected(username);
+        }
         // Gửi danh sách online khi có người disconnect
         messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
     }

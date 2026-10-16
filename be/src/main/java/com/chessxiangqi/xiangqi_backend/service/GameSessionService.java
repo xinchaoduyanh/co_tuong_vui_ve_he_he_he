@@ -1,5 +1,6 @@
 package com.chessxiangqi.xiangqi_backend.service;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +38,12 @@ public class GameSessionService {
 
     /** Mỗi bên có 10 phút cho cả ván. */
     public static final long TURN_LIMIT_MS = 600_000L;
+
+    /** Mất kết nối quá 60 giây thì bị xử thua (ABANDON). */
+    public static final long DISCONNECT_GRACE_MS = 60_000L;
+
+    /** Chỉ coi là trận đang chơi nếu được tạo trong khoảng thời gian này (tránh trận bỏ dở cũ). */
+    private static final Duration ACTIVE_WINDOW = Duration.ofHours(2);
 
     @Autowired
     private MatchService matchService;
@@ -98,6 +105,7 @@ public class GameSessionService {
         session.setLastTickAt(clock.getAsLong());
         session.setEnded(match.getEndDate() != null);
         session.setEndReason(match.getResult());
+        session.setLastMoveDescription(latest.getMoveDescription());
         if (match.getWinner() != null) {
             session.setWinnerColor(match.getWinner().getId().equals(match.getPlayer1().getId()) ? 'r' : 'b');
         }
@@ -159,6 +167,7 @@ public class GameSessionService {
             session.setTurn(nextSide);
             session.setNextTurnNumber(session.getNextTurnNumber() + 1);
             session.setCheck(entity.isCheck());
+            session.setLastMoveDescription(description);
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("boardState", next);
@@ -306,6 +315,12 @@ public class GameSessionService {
                 if (remainingMs(session, now) <= 0) {
                     settleClock(session, now);
                     finishGame(session, "TIMEOUT", XiangqiRules.opponent(side));
+                    continue;
+                }
+                // Bên nào mất kết nối quá 60 giây thì thua; đồng hồ vẫn chạy khi mất kết nối
+                Character gone = disconnectedOverGrace(session, now);
+                if (gone != null) {
+                    finishGame(session, "ABANDON", XiangqiRules.opponent(gone));
                 }
             }
         }
@@ -348,7 +363,7 @@ public class GameSessionService {
 
     private long displayedMs(GameSession session, char side, long now) {
         long base = side == 'r' ? session.getRedTimeMs() : session.getBlackTimeMs();
-        if (session.getTurn() != side) {
+        if (session.isEnded() || session.getTurn() != side) {
             return base;
         }
         return base - (now - session.getLastTickAt());
@@ -362,6 +377,124 @@ public class GameSessionService {
         return winnerElo < loserElo
             ? (int) Math.round(BASE_ELO_POINT * ratio)
             : (int) Math.round(BASE_ELO_POINT / ratio);
+    }
+
+    /** Trạng thái trận để client vào lại: bàn cờ, lượt, đồng hồ, hai người chơi. */
+    public Optional<Map<String, Object>> snapshot(String matchId) {
+        return getSession(matchId).map(this::snapshot);
+    }
+
+    public Map<String, Object> snapshot(GameSession session) {
+        long now = clock.getAsLong();
+        Map<String, Object> data = new HashMap<>();
+        data.put("matchId", session.getMatchId());
+        data.put("status", session.isEnded() ? "ENDED" : "ACTIVE");
+        data.put("endReason", session.getEndReason());
+        if (session.getWinnerColor() == null) {
+            data.put("winner", session.isEnded() ? "DRAW" : null);
+        } else {
+            data.put("winner", session.getWinnerColor() == 'r' ? "red" : "black");
+        }
+        Map<String, Object> players = new HashMap<>();
+        players.put("red", playerDto(session.getRedPlayerId()));
+        players.put("black", playerDto(session.getBlackPlayerId()));
+        data.put("players", players);
+        data.put("boardState", session.getBoardState());
+        data.put("turn", String.valueOf(session.getTurn()));
+        data.put("check", session.isCheck());
+        data.put("moveDescription", session.getLastMoveDescription());
+        data.put("redTimeMs", displayedMs(session, 'r', now));
+        data.put("blackTimeMs", displayedMs(session, 'b', now));
+        data.put("serverTime", now);
+        Map<String, Boolean> disconnected = new HashMap<>();
+        disconnected.put("red", session.getRedDisconnectedAt() != null);
+        disconnected.put("black", session.getBlackDisconnectedAt() != null);
+        data.put("disconnected", disconnected);
+        return data;
+    }
+
+    private PlayerPublicDto playerDto(String playerId) {
+        return playerService.getPlayerById(playerId).map(PlayerPublicDto::from).orElse(null);
+    }
+
+    /** Trận người-người đang chơi của người chơi (nếu có), nạp từ bộ nhớ hoặc DB. */
+    public Optional<GameSession> findActiveSessionByPlayerId(String playerId) {
+        Date since = new Date(System.currentTimeMillis() - ACTIVE_WINDOW.toMillis());
+        return matchService.findActiveByPlayerId(playerId, since).stream()
+            .findFirst()
+            .flatMap(match -> getSession(match.getId()));
+    }
+
+    /** Người chơi kết nối (hoặc kết nối lại): đặt trạng thái đang chơi nếu còn trận. */
+    public void onPlayerConnected(String username) {
+        findActiveSession(username).ifPresent(session -> {
+            synchronized (session) {
+                if (session.isEnded()) {
+                    return;
+                }
+                char side = sideOf(session, username);
+                playerService.updatePlayerStatus(username, PlayerStatus.IN_GAME);
+                if (disconnectedAt(session, side) != null) {
+                    setDisconnectedAt(session, side, null);
+                    broadcastPresence(session, side, "RECONNECTED", 0);
+                }
+            }
+        });
+    }
+
+    /** Người chơi mất kết nối giữa trận: báo đối thủ, bắt đầu đếm 60 giây. */
+    public void onPlayerDisconnected(String username) {
+        findActiveSession(username).ifPresent(session -> {
+            synchronized (session) {
+                if (session.isEnded()) {
+                    return;
+                }
+                char side = sideOf(session, username);
+                if (disconnectedAt(session, side) == null) {
+                    long now = clock.getAsLong();
+                    setDisconnectedAt(session, side, now);
+                    broadcastPresence(session, side, "DISCONNECTED", now + DISCONNECT_GRACE_MS);
+                }
+            }
+        });
+    }
+
+    private Optional<GameSession> findActiveSession(String username) {
+        return playerService.getPlayerByUsername(username)
+            .flatMap(player -> findActiveSessionByPlayerId(player.getId()));
+    }
+
+    /** Bên mất kết nối quá {@link #DISCONNECT_GRACE_MS}, hoặc null nếu không có bên nào. */
+    private Character disconnectedOverGrace(GameSession session, long now) {
+        for (char side : new char[] {'r', 'b'}) {
+            Long since = disconnectedAt(session, side);
+            if (since != null && now - since > DISCONNECT_GRACE_MS) {
+                return side;
+            }
+        }
+        return null;
+    }
+
+    private Long disconnectedAt(GameSession session, char side) {
+        return side == 'r' ? session.getRedDisconnectedAt() : session.getBlackDisconnectedAt();
+    }
+
+    private void setDisconnectedAt(GameSession session, char side, Long value) {
+        if (side == 'r') {
+            session.setRedDisconnectedAt(value);
+        } else {
+            session.setBlackDisconnectedAt(value);
+        }
+    }
+
+    private void broadcastPresence(GameSession session, char side, String status, long deadline) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "PRESENCE");
+        payload.put("color", String.valueOf(side));
+        payload.put("username", side == 'r' ? session.getRedUsername() : session.getBlackUsername());
+        payload.put("status", status);
+        payload.put("deadline", deadline);
+        messagingTemplate.convertAndSend("/topic/match." + session.getMatchId() + ".presence", payload);
     }
 
     private char sideOf(GameSession session, String username) {

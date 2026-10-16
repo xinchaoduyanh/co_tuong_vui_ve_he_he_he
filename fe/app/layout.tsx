@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { WebSocketProvider } from "@/lib/websocket-context";
 import { AuthProvider } from "@/lib/api/context/AuthContext";
 import { NotificationProvider } from "@/components/NotificationProvider";
+import { RejoinBanner } from "@/components/rejoin-banner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
           <AuthProvider>
             <NotificationProvider>
               <WebSocketProvider>
+                <RejoinBanner />
                 <main className="min-h-screen">{children}</main>
               </WebSocketProvider>
             </NotificationProvider>

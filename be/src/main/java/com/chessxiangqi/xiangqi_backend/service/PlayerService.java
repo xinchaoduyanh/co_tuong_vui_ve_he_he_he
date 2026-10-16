@@ -75,12 +75,20 @@ public class PlayerService {
         }
     }
 
-    public void removeOnlinePlayerBySessionId(String sessionId) {
+    /**
+     * Gỡ phiên khỏi danh sách online. Trả về true nếu đó là phiên hiện tại của người chơi.
+     * Khi tải lại trang, phiên cũ đóng sau phiên mới nên không được xóa nhầm mục của phiên mới.
+     */
+    public boolean removeOnlinePlayerBySessionId(String sessionId) {
         OnlinePlayer player = onlinePlayersBySessionId.remove(sessionId);
-        if (player != null) {
-            onlinePlayersByUsername.remove(player.getUsername());
+        if (player == null) {
+            return false;
+        }
+        boolean current = onlinePlayersByUsername.remove(player.getUsername(), player);
+        if (current) {
             log.info("[STATUS] [OFFLINE] {} - SessionId: {}", player.getUsername(), sessionId);
         }
+        return current;
     }
 
     public boolean isPlayerOnline(String username) {
@@ -121,9 +129,9 @@ public class PlayerService {
             .collect(Collectors.toList());
     }
 
+    /** Người đang online, gồm cả người đang trong trận (IN_GAME) để client hiển thị nhãn "Đang chơi". */
     public List<OnlinePlayer> getOnlinePlayers() {
         List<OnlinePlayer> players = onlinePlayersByUsername.values().stream()
-            .filter(p -> p.getStatus() == PlayerStatus.ONLINE)
             .collect(Collectors.toList());
         log.info("[STATUS] Current online players: {}", 
             players.stream()

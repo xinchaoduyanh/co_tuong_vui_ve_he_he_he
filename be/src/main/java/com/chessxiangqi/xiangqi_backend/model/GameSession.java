@@ -24,4 +24,9 @@ public class GameSession {
     private long redTimeMs;
     private long blackTimeMs;
     private long lastTickAt;
+
+    // Thời điểm mất kết nối của từng bên (null nếu đang kết nối)
+    private Long redDisconnectedAt;
+    private Long blackDisconnectedAt;
+    private String lastMoveDescription;
 }
