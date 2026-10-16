@@ -19,7 +19,21 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-ui)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "serif"],
+        han: ["var(--font-han)", "serif"],
+      },
+      zIndex: {
+        header: "40",
+        overlay: "900",
+        dialog: "950",
+        banner: "960",
+        toast: "1000",
+      },
       colors: {
+        success: "hsl(var(--success))",
+        warning: "hsl(var(--warning))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

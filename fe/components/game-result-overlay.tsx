@@ -27,34 +27,45 @@ export function reasonLabel(reason: string | null) {
   return REASON_LABEL[reason] ?? reason;
 }
 
+const CONFETTI_COLORS = ["#D8432E", "#E3B65B", "#3FA37F", "#ECE6D6", "#B9863A"];
+
 const OUTCOME_TITLE: Record<GameOutcome, string> = {
   win: "Bạn thắng!",
   lose: "Bạn thua",
   draw: "Hòa cờ",
 };
 
-const CONFETTI_COLORS = ["#F44336", "#FFC107", "#4CAF50", "#2196F3", "#E91E63", "#9C27B0"];
+const OUTCOME_COLOR: Record<GameOutcome, string> = {
+  win: "text-success",
+  lose: "text-primary",
+  draw: "text-warning",
+};
 
 function formatElo(change: number | null) {
   if (change === null) return "";
-  return `${change > 0 ? "+" : ""}${change}`;
+  return `${change > 0 ? "+" : change < 0 ? "−" : ""}${Math.abs(change)}`;
+}
+
+function eloTone(change: number | null) {
+  if (change === null || change === 0) return "text-muted-foreground";
+  return change > 0 ? "text-success" : "text-primary";
 }
 
 // Pháo giấy CSS thuần, chỉ hiện khi thắng
 function Confetti() {
   const pieces = useMemo(
     () =>
-      Array.from({ length: 60 }, (_, i) => ({
+      Array.from({ length: 56 }, (_, i) => ({
         left: `${(i * 37) % 100}%`,
         delay: `${(i % 12) * 0.15}s`,
-        duration: `${2.5 + (i % 5) * 0.4}s`,
+        duration: `${2.6 + (i % 5) * 0.4}s`,
         color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
         size: 6 + (i % 4) * 2,
       })),
     []
   );
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden motion-reduce:hidden">
       <style>{`
         @keyframes xiangqi-confetti-fall {
           0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
@@ -64,7 +75,7 @@ function Confetti() {
       {pieces.map((p, i) => (
         <span
           key={i}
-          className="absolute top-0 block rounded-sm"
+          className="absolute top-0 block rounded-[1px]"
           style={{
             left: p.left,
             width: p.size,
@@ -87,48 +98,48 @@ export function GameResultOverlay({
   onHome: () => void;
   onHistory: () => void;
 }) {
-  const titleColor =
-    result.outcome === "win"
-      ? "text-green-700"
-      : result.outcome === "lose"
-      ? "text-red-700"
-      : "text-amber-700";
-
   return (
-    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/50 p-4">
-      <div className="relative w-full max-w-sm overflow-hidden rounded-xl bg-white p-6 text-center shadow-2xl">
-        {result.outcome === "win" && <Confetti />}
-        <div className="relative">
-          <h2 className={`text-2xl font-bold ${titleColor}`}>
-            {OUTCOME_TITLE[result.outcome]}
-          </h2>
-          {result.reason && (
-            <p className="mt-2 text-gray-700">
-              Lý do: {reasonLabel(result.reason)}
-            </p>
-          )}
-          {result.myEloChange !== null && (
-            <div className="mt-4 space-y-1 text-sm text-gray-700">
-              <p>
-                Điểm Elo của bạn:{" "}
-                <strong>{formatElo(result.myEloChange)}</strong>
-              </p>
-              {result.opponentName && result.opponentEloChange !== null && (
-                <p>
-                  Điểm Elo của {result.opponentName}:{" "}
-                  <strong>{formatElo(result.opponentEloChange)}</strong>
-                </p>
-              )}
+    <div className="fixed inset-0 z-overlay flex items-end justify-center bg-background/85 p-4 sm:items-center">
+      {result.outcome === "win" && <Confetti />}
+      <div
+        role="dialog"
+        aria-labelledby="result-title"
+        className="rise relative w-full max-w-md rounded-lg bg-card p-7 shadow-[0_30px_80px_-24px_hsl(150_14%_3%/0.9)] ring-1 ring-border"
+      >
+        <p className="text-sm text-muted-foreground">
+          {result.reason ? reasonLabel(result.reason) : "Kết thúc trận"}
+        </p>
+        <h2
+          id="result-title"
+          className={`mt-1 font-display text-5xl font-bold leading-none sm:text-6xl ${OUTCOME_COLOR[result.outcome]}`}
+        >
+          {OUTCOME_TITLE[result.outcome]}
+        </h2>
+
+        {result.myEloChange !== null && (
+          <dl className="mt-7 grid grid-cols-2 gap-6 border-t border-border pt-5">
+            <div>
+              <dt className="text-sm text-muted-foreground">Elo của bạn</dt>
+              <dd className={`tabular mt-1 font-display text-3xl font-semibold ${eloTone(result.myEloChange)}`}>
+                {formatElo(result.myEloChange)}
+              </dd>
             </div>
-          )}
-          <div className="mt-6 flex justify-center gap-3">
-            <Button variant="outline" onClick={onHistory}>
-              Xem lịch sử
-            </Button>
-            <Button onClick={onHome} className="bg-amber-600 text-white hover:bg-amber-700">
-              Về trang chủ
-            </Button>
-          </div>
+            {result.opponentName && result.opponentEloChange !== null && (
+              <div>
+                <dt className="truncate text-sm text-muted-foreground">Elo của {result.opponentName}</dt>
+                <dd className={`tabular mt-1 font-display text-3xl font-semibold ${eloTone(result.opponentEloChange)}`}>
+                  {formatElo(result.opponentEloChange)}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
+
+        <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={onHistory}>
+            Xem lịch sử
+          </Button>
+          <Button onClick={onHome}>Về trang chủ</Button>
         </div>
       </div>
     </div>

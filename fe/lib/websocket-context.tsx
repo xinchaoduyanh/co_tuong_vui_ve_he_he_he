@@ -269,7 +269,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
       {isReconnecting && (
-        <div className="fixed bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full bg-amber-600 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-4 left-1/2 z-toast -translate-x-1/2 rounded-md bg-warning px-4 py-2 text-sm font-medium text-background shadow-lg" role="status">
           Đang kết nối lại…
         </div>
       )}

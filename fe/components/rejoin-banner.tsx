@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useActiveMatch } from "@/lib/api/hooks/use-active-match";
 
-// Còn trận dở: thanh nổi luôn hiện ở mọi trang (trừ bàn cờ) cùng nút vào lại;
+// Còn trận dở: thanh cố định ở mọi trang (trừ bàn cờ) cùng nút vào lại;
 // tự đưa về bàn cờ một lần cho mỗi lần tải trang.
 export function RejoinBanner() {
   const match = useActiveMatch();
@@ -22,14 +22,14 @@ export function RejoinBanner() {
   if (!match || onBoard) return null;
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[960] flex items-center justify-center gap-3 bg-red-600 px-4 py-2 text-white shadow-lg">
+    <div className="fixed inset-x-0 top-0 z-banner flex flex-wrap items-center justify-center gap-x-4 gap-y-1 bg-primary px-4 py-2 text-primary-foreground">
       <span className="text-sm">
-        Bạn đang trong trận với <strong>{match.opponent}</strong>. Rời trận quá lâu sẽ bị xử thua.
+        Bạn đang trong trận với <strong className="font-semibold">{match.opponent}</strong>. Rời quá lâu sẽ bị xử thua.
       </span>
       <button
         type="button"
         onClick={() => router.push(`/game-board?matchId=${match.matchId}`)}
-        className="rounded-md bg-white px-3 py-1 text-sm font-semibold text-red-700 hover:bg-red-50"
+        className="h-9 rounded-md bg-primary-foreground px-4 text-sm font-semibold text-primary transition-transform hover:bg-primary-foreground/90 active:scale-[0.98]"
       >
         Vào lại trận
       </button>

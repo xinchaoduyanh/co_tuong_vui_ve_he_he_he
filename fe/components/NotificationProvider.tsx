@@ -58,11 +58,13 @@ const NotificationContext = createContext<NotificationContextType | undefined>(
 );
 
 const SEVERITY_STYLE: Record<NotificationSeverity, string> = {
-  success: "border-l-green-500",
-  info: "border-l-blue-500",
-  warn: "border-l-amber-500",
-  error: "border-l-red-500",
+  success: "border-l-success",
+  info: "border-l-muted-foreground",
+  warn: "border-l-warning",
+  error: "border-l-primary",
 };
+
+const CARD_SHADOW = "shadow-[0_10px_32px_-10px_hsl(150_14%_3%/0.6)]";
 
 export const NotificationProvider: React.FC<{
   children: React.ReactNode;
@@ -146,7 +148,7 @@ export const NotificationProvider: React.FC<{
       }}
     >
       {children}
-      <div className="fixed top-4 right-4 z-[1000] flex w-[min(92vw,360px)] flex-col gap-3">
+      <div className="pointer-events-none fixed right-3 top-3 z-toast flex w-[min(94vw,380px)] flex-col gap-2.5 sm:right-4 sm:top-4 [&>*]:pointer-events-auto">
         {challenges.map((item) => (
           <ChallengeCard
             key={item.id}
@@ -190,15 +192,15 @@ function NotificationCard({
   return (
     <div
       role="status"
-      className={`rounded-lg border border-gray-200 border-l-4 bg-white px-4 py-3 shadow-lg ${
+      className={`rise rounded-md border-l-[3px] bg-card px-4 py-3 text-card-foreground ${CARD_SHADOW} ${
         SEVERITY_STYLE[item.severity]
       }`}
     >
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
-          <p className="font-semibold text-gray-900">{item.summary}</p>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold leading-snug">{item.summary}</p>
           {item.detail && (
-            <p className="mt-1 whitespace-pre-line text-sm text-gray-700">
+            <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
               {item.detail}
             </p>
           )}
@@ -209,7 +211,7 @@ function NotificationCard({
                 item.action?.onClick();
                 onClose();
               }}
-              className="mt-2 text-sm font-medium text-blue-700 underline"
+              className="mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
             >
               {item.action.label}
             </button>
@@ -219,7 +221,7 @@ function NotificationCard({
           type="button"
           aria-label="Đóng"
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600"
+          className="-mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
         >
           ×
         </button>
@@ -242,6 +244,7 @@ function ChallengeCard({
   const [remainingMs, setRemainingMs] = useState(
     Math.max(0, item.expiresAt - Date.now())
   );
+  const [totalMs] = useState(Math.max(1, item.expiresAt - Date.now()));
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -260,30 +263,42 @@ function ChallengeCard({
   return (
     <div
       role="alertdialog"
-      className="rounded-lg border border-blue-200 border-l-4 border-l-blue-500 bg-white px-4 py-3 shadow-lg"
+      className={`rise overflow-hidden rounded-md bg-card text-card-foreground ring-1 ring-primary/50 ${CARD_SHADOW}`}
     >
-      <p className="font-semibold text-blue-700">Lời mời thách đấu</p>
-      <p className="mt-1 text-sm text-gray-800">
-        <strong>{item.challenger}</strong> muốn thách đấu với bạn.
-      </p>
-      <p className="mt-1 text-right text-xs text-gray-500">
-        Hết hạn sau {Math.ceil(remainingMs / 1000)}s
-      </p>
-      <div className="mt-2 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onAccept}
-          className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
-        >
-          Chấp nhận
-        </button>
-        <button
-          type="button"
-          onClick={onReject}
-          className="rounded bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600"
-        >
-          Từ chối
-        </button>
+      <div className="px-4 pb-3 pt-4">
+        <p className="text-sm text-muted-foreground">Lời mời thách đấu</p>
+        <p className="mt-0.5 font-display text-xl font-semibold leading-tight">
+          {item.challenger}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          muốn đấu một ván với bạn · còn{" "}
+          <span className="tabular text-foreground">{Math.ceil(remainingMs / 1000)}s</span>
+        </p>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={onAccept}
+            className="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[background-color,transform] hover:bg-primary/88 active:scale-[0.98]"
+          >
+            Chấp nhận
+          </button>
+          <button
+            type="button"
+            onClick={onReject}
+            className="h-11 rounded-md px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Từ chối
+          </button>
+        </div>
+      </div>
+      <div className="h-1 bg-secondary" aria-hidden>
+        <div
+          className="h-full origin-left bg-primary"
+          style={{
+            transform: `scaleX(${remainingMs / totalMs})`,
+            transition: "transform 200ms linear",
+          }}
+        />
       </div>
     </div>
   );

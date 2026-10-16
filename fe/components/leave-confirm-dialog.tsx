@@ -14,19 +14,23 @@ export function LeaveConfirmDialog({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[950] flex items-center justify-center bg-black/50 p-4">
-      <div role="alertdialog" className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-gray-900">Rời trận đấu?</h2>
-        <p className="mt-2 text-gray-700">
-          Rời trận sẽ bị xử THUA. Bạn có chắc không?
+    <div className="fixed inset-0 z-dialog flex items-end justify-center bg-background/80 p-4 sm:items-center">
+      <div
+        role="alertdialog"
+        aria-labelledby="leave-title"
+        className="rise w-full max-w-sm rounded-lg bg-card p-6 shadow-[0_24px_60px_-20px_hsl(150_14%_3%/0.8)] ring-1 ring-border"
+      >
+        <h2 id="leave-title" className="font-display text-2xl font-semibold">
+          Rời trận đấu?
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          Rời trận sẽ bị xử thua. Bạn có chắc không?
         </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="outline" onClick={onStay}>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onStay}>
             Ở lại
           </Button>
-          <Button onClick={onLeave} className="bg-red-600 text-white hover:bg-red-700">
-            Đồng ý rời
-          </Button>
+          <Button onClick={onLeave}>Đồng ý rời</Button>
         </div>
       </div>
     </div>
