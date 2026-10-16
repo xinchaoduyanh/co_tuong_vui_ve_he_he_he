@@ -13,6 +13,13 @@ const TONES = [
   ["350 30% 30%", "350 45% 88%"],
 ];
 
+// Chữ cái đầu + số ở cuối (player2 -> P2), nếu không có số thì lấy hai chữ đầu
+function initialsOf(name: string) {
+  const last = name.slice(-1);
+  const text = /\d/.test(last) && name.length > 1 ? name[0] + last : name.substring(0, 2);
+  return text.toUpperCase();
+}
+
 function toneOf(name: string) {
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -36,7 +43,7 @@ export function PlayerAvatar({
       style={ringColor ? { boxShadow: `0 0 0 2px ${ringColor}` } : undefined}
     >
       <AvatarFallback style={{ backgroundColor: `hsl(${bg})`, color: `hsl(${fg})` }}>
-        {label.substring(0, 2).toUpperCase()}
+        {initialsOf(label)}
       </AvatarFallback>
     </Avatar>
   );
