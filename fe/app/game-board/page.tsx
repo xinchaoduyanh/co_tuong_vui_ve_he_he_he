@@ -39,6 +39,23 @@ const blackSymbols = {
   S: "卒",
 };
 
+// Định dạng mm:ss cho đồng hồ
+function formatClock(ms: number | null) {
+  if (ms === null) return "--:--";
+  const total = Math.ceil(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+// Đổi màu khi sắp hết giờ: <60s đỏ, <10s nhấp nháy
+function clockClass(ms: number | null) {
+  if (ms === null) return "";
+  if (ms < 10_000) return "text-red-600 font-bold animate-pulse";
+  if (ms < 60_000) return "text-red-500 font-semibold";
+  return "";
+}
+
 export default function GameBoard() {
   const { stompClient, isConnected } = useWebSocket();
   const { user } = useAuth();
@@ -62,6 +79,14 @@ export default function GameBoard() {
   const [showDrawRequestDialog, setShowDrawRequestDialog] = useState(false);
   const [showDrawResponseDialog, setShowDrawResponseDialog] = useState(false);
   const [drawRequestFrom, setDrawRequestFrom] = useState<string | null>(null);
+  // Đồng hồ: mốc thời gian từ server; FE chỉ đếm lùi để hiển thị, server quyết định hết giờ
+  const [clock, setClock] = useState<{
+    redMs: number;
+    blackMs: number;
+    turn: string;
+    receivedAt: number;
+  } | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
 
   const {
     matchId,
@@ -118,6 +143,14 @@ export default function GameBoard() {
       setBoardState(data.boardState);
       setTurn(data.nextTurn);
       setMoveDescription(data.moveDescription);
+      if (data.redTimeMs != null && data.blackTimeMs != null) {
+        setClock({
+          redMs: data.redTimeMs,
+          blackMs: data.blackTimeMs,
+          turn: data.nextTurn,
+          receivedAt: Date.now(),
+        });
+      }
       setIsCheck(data.isCheck);
       setIsCheckmate(data.isCheckmate);
 
@@ -159,6 +192,35 @@ export default function GameBoard() {
       subscription.unsubscribe();
     };
   }, [stompClient, isConnected, matchId, setPieces]);
+
+  // Đồng bộ đồng hồ định kỳ từ server
+  useEffect(() => {
+    if (!stompClient || !isConnected || !matchId) return;
+    const sub = stompClient.subscribe(`/topic/match.${matchId}.clock`, (msg) => {
+      const data = JSON.parse(msg.body);
+      setClock({
+        redMs: data.redTimeMs,
+        blackMs: data.blackTimeMs,
+        turn: data.turn,
+        receivedAt: Date.now(),
+      });
+    });
+    return () => sub.unsubscribe();
+  }, [stompClient, isConnected, matchId]);
+
+  // Đếm lùi cục bộ mỗi 200ms khi đã có đồng hồ
+  useEffect(() => {
+    if (!clock) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 200);
+    return () => clearInterval(timer);
+  }, [clock]);
+
+  const remainingOf = (side: "r" | "b") => {
+    if (!clock) return null;
+    const base = side === "r" ? clock.redMs : clock.blackMs;
+    const elapsed = clock.turn === side ? clockNow - clock.receivedAt : 0;
+    return Math.max(0, base - elapsed);
+  };
 
   useEffect(() => {
     if (!stompClient || !isConnected || !matchId) return;
@@ -642,9 +704,11 @@ export default function GameBoard() {
             </p>
             <span>ELO: {player1?.elo}</span>
           </div>
-          <span className="ml-auto text-sm font-mono">
+          <span
+            className={`ml-auto text-sm font-mono ${clockClass(remainingOf("r"))}`}
+          >
             <Clock className="inline-block w-4 h-4 mr-1" />
-            {/* players.red.timeLeft */}
+            {formatClock(remainingOf("r"))}
           </span>
         </div>
 
@@ -1005,9 +1069,11 @@ export default function GameBoard() {
           </p>
           <span>ELO: {player2?.elo}</span>
         </div>
-        <span className="ml-auto text-sm font-mono">
+        <span
+          className={`ml-auto text-sm font-mono ${clockClass(remainingOf("b"))}`}
+        >
           <Clock className="inline-block w-4 h-4 mr-1" />
-          {/* players.black.timeLeft */}
+          {formatClock(remainingOf("b"))}
         </span>
       </div>
 

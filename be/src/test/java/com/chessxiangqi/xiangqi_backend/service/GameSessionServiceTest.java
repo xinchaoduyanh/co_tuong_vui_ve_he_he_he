@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,8 @@ class GameSessionServiceTest {
     private Player red;
     private Player black;
     private Match match;
+    // Đồng hồ giả lập (ms)
+    private long nowMs = 1_000_000L;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +58,7 @@ class GameSessionServiceTest {
         ReflectionTestUtils.setField(service, "playerService", playerService);
         ReflectionTestUtils.setField(service, "playerMatchRepository", playerMatchRepository);
         ReflectionTestUtils.setField(service, "messagingTemplate", template);
+        ReflectionTestUtils.setField(service, "clock", (LongSupplier) () -> nowMs);
 
         red = new Player();
         red.setId("r1");
@@ -83,6 +87,8 @@ class GameSessionServiceTest {
         latest.setNextTurn(turn);
         latest.setTurnNumber(0);
         when(moveService.getLatestMove("m1")).thenReturn(latest);
+        // Nạp trận ngay để đồng hồ bắt đầu tại thời điểm này
+        service.getSession("m1");
     }
 
     /** Bàn cờ trống với các quân cho trước, mỗi quân dạng "<ký tự><x><y>". */
@@ -170,6 +176,39 @@ class GameSessionServiceTest {
         assertEquals(20, GameSessionService.eloDelta(1500, 1500));
         // Người yếu thắng người mạnh nhận nhiều điểm hơn người mạnh thắng người yếu
         assertTrue(GameSessionService.eloDelta(1200, 1800) > GameSessionService.eloDelta(1800, 1200));
+    }
+
+    @Test
+    void clockDeductsOnlyMoverTime() {
+        startWith(INITIAL_BOARD, "r");
+        nowMs += 30_000;
+        service.makeMove("m1", "p1", 0, 3, 0, 4);
+        GameSession session = service.getSession("m1").orElseThrow();
+        assertEquals(570_000, session.getRedTimeMs());
+        assertEquals(600_000, session.getBlackTimeMs());
+
+        nowMs += 10_000;
+        service.makeMove("m1", "p2", 0, 6, 0, 5);
+        assertEquals(570_000, session.getRedTimeMs());
+        assertEquals(590_000, session.getBlackTimeMs());
+    }
+
+    @Test
+    void moveAfterTimeLimitLosesOnTheSpot() {
+        startWith(INITIAL_BOARD, "r");
+        nowMs += GameSessionService.TURN_LIMIT_MS + 1;
+        service.makeMove("m1", "p1", 0, 3, 0, 4);
+        assertEquals("TIMEOUT", match.getResult());
+        assertEquals(black, match.getWinner());
+    }
+
+    @Test
+    void checkTimeoutsEndsExpiredGame() {
+        startWith(INITIAL_BOARD, "r");
+        nowMs += GameSessionService.TURN_LIMIT_MS;
+        service.checkTimeouts();
+        assertEquals("TIMEOUT", match.getResult());
+        assertEquals(black, match.getWinner());
     }
 
     @Test

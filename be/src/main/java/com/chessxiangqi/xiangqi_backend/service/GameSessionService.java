@@ -6,9 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.chessxiangqi.xiangqi_backend.dto.PlayerPublicDto;
@@ -33,6 +35,9 @@ public class GameSessionService {
 
     private static final int BASE_ELO_POINT = 20;
 
+    /** Mỗi bên có 10 phút cho cả ván. */
+    public static final long TURN_LIMIT_MS = 600_000L;
+
     @Autowired
     private MatchService matchService;
 
@@ -50,6 +55,9 @@ public class GameSessionService {
 
     // Trận đang chơi, theo matchId
     private final Map<String, GameSession> sessions = new ConcurrentHashMap<>();
+
+    // Nguồn thời gian; test có thể thay để giả lập đồng hồ
+    private LongSupplier clock = System::currentTimeMillis;
 
     /** Lỗi do người chơi gây ra; thông điệp được gửi nguyên văn cho họ. */
     public static class GameActionException extends RuntimeException {
@@ -85,6 +93,9 @@ public class GameSessionService {
         session.setTurn(latest.getNextTurn().charAt(0));
         session.setNextTurnNumber(latest.getTurnNumber() + 1);
         session.setCheck(XiangqiRules.isInCheck(latest.getBoardState(), session.getTurn()));
+        session.setRedTimeMs(latest.getRedTimeMs() != null ? latest.getRedTimeMs() : TURN_LIMIT_MS);
+        session.setBlackTimeMs(latest.getBlackTimeMs() != null ? latest.getBlackTimeMs() : TURN_LIMIT_MS);
+        session.setLastTickAt(clock.getAsLong());
         session.setEnded(match.getEndDate() != null);
         session.setEndReason(match.getResult());
         if (match.getWinner() != null) {
@@ -106,6 +117,11 @@ public class GameSessionService {
             char side = sideOf(session, username);
             if (side != session.getTurn()) {
                 throw new GameActionException("Chưa đến lượt bạn");
+            }
+            // Hết giờ trước khi kịp đi: thua ngay, nước đi không được áp dụng
+            if (settleClock(session, clock.getAsLong())) {
+                finishGame(session, "TIMEOUT", XiangqiRules.opponent(side));
+                return;
             }
             if (!inBoard(fromX, fromY) || !inBoard(toX, toY)) {
                 throw new GameActionException("Nước đi không hợp lệ");
@@ -135,6 +151,8 @@ public class GameSessionService {
             entity.setMoveDescription(description);
             entity.setCheck(status == XiangqiRules.Status.CHECK || status == XiangqiRules.Status.CHECKMATE);
             entity.setCheckmate(status == XiangqiRules.Status.CHECKMATE);
+            entity.setRedTimeMs(session.getRedTimeMs());
+            entity.setBlackTimeMs(session.getBlackTimeMs());
             moveService.saveMove(entity);
 
             session.setBoardState(next);
@@ -158,6 +176,8 @@ public class GameSessionService {
             payload.put("isCheckmate", status == XiangqiRules.Status.CHECKMATE);
             payload.put("redCheck", XiangqiRules.isInCheck(next, XiangqiRules.RED));
             payload.put("blackCheck", XiangqiRules.isInCheck(next, XiangqiRules.BLACK));
+            payload.put("redTimeMs", session.getRedTimeMs());
+            payload.put("blackTimeMs", session.getBlackTimeMs());
             messagingTemplate.convertAndSend("/topic/match." + matchId + ".board", payload);
 
             if (status == XiangqiRules.Status.CHECKMATE || status == XiangqiRules.Status.STALEMATE) {
@@ -271,6 +291,67 @@ public class GameSessionService {
         messagingTemplate.convertAndSend("/topic/users.online", playerService.getOnlinePlayers());
 
         log.info("[GAME] Match {} ended: reason={}, winner={}", session.getMatchId(), reason, winnerColor);
+    }
+
+    /** Quét các trận đang chơi mỗi giây: bên đang đến lượt hết giờ thì thua. */
+    @Scheduled(fixedRate = 1000)
+    public void checkTimeouts() {
+        long now = clock.getAsLong();
+        for (GameSession session : sessions.values()) {
+            synchronized (session) {
+                if (session.isEnded()) {
+                    continue;
+                }
+                char side = session.getTurn();
+                if (remainingMs(session, now) <= 0) {
+                    settleClock(session, now);
+                    finishGame(session, "TIMEOUT", XiangqiRules.opponent(side));
+                }
+            }
+        }
+    }
+
+    /** Gửi đồng bộ đồng hồ mỗi 5 giây cho các trận đang chơi. Client chỉ hiển thị, không quyết định thua. */
+    @Scheduled(fixedRate = 5000)
+    public void broadcastClocks() {
+        long now = clock.getAsLong();
+        for (GameSession session : sessions.values()) {
+            synchronized (session) {
+                if (session.isEnded()) {
+                    continue;
+                }
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("turn", String.valueOf(session.getTurn()));
+                payload.put("redTimeMs", displayedMs(session, 'r', now));
+                payload.put("blackTimeMs", displayedMs(session, 'b', now));
+                messagingTemplate.convertAndSend("/topic/match." + session.getMatchId() + ".clock", payload);
+            }
+        }
+    }
+
+    /** Trừ thời gian đã dùng của bên đang đến lượt, đặt lại mốc. Trả về true nếu bên đó đã hết giờ. */
+    private boolean settleClock(GameSession session, long now) {
+        long elapsed = now - session.getLastTickAt();
+        if (session.getTurn() == 'r') {
+            session.setRedTimeMs(Math.max(0, session.getRedTimeMs() - elapsed));
+        } else {
+            session.setBlackTimeMs(Math.max(0, session.getBlackTimeMs() - elapsed));
+        }
+        session.setLastTickAt(now);
+        return remainingMs(session, now) <= 0;
+    }
+
+    /** Thời gian còn lại của bên đang đến lượt tại thời điểm {@code now}, không thay đổi trạng thái. */
+    private long remainingMs(GameSession session, long now) {
+        return displayedMs(session, session.getTurn(), now);
+    }
+
+    private long displayedMs(GameSession session, char side, long now) {
+        long base = side == 'r' ? session.getRedTimeMs() : session.getBlackTimeMs();
+        if (session.getTurn() != side) {
+            return base;
+        }
+        return base - (now - session.getLastTickAt());
     }
 
     /** Biến thiên Elo đối xứng: người thắng được +delta, người thua -delta. */

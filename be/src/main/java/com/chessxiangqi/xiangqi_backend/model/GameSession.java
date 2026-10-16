@@ -19,4 +19,9 @@ public class GameSession {
     private boolean ended;
     private String endReason;
     private Character winnerColor; // 'r' | 'b' | null (hòa)
+
+    // Đồng hồ: thời gian còn lại tại mốc lastTickAt của bên đang đến lượt
+    private long redTimeMs;
+    private long blackTimeMs;
+    private long lastTickAt;
 }
