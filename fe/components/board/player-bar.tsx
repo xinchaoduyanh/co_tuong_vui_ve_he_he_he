@@ -16,7 +16,7 @@ export function PlayerBar({
   isMe: boolean;
   side: "r" | "b";
   active: boolean;
-  clockText: string;
+  clockText?: string;
   clockClassName?: string;
 }) {
   return (
@@ -43,10 +43,12 @@ export function PlayerBar({
           {side === "r" ? "Quân đỏ" : "Quân đen"}
         </p>
       </div>
-      <div className={`flex shrink-0 items-center gap-1.5 rounded-md bg-background/70 px-2.5 py-1.5 ${clockClassName ?? ""}`}>
-        <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
-        <span className="tabular text-xl font-semibold leading-none">{clockText}</span>
-      </div>
+      {clockText !== undefined && (
+        <div className={`flex shrink-0 items-center gap-1.5 rounded-md bg-background/70 px-2.5 py-1.5 ${clockClassName ?? ""}`}>
+          <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span className="tabular text-xl font-semibold leading-none">{clockText}</span>
+        </div>
+      )}
     </div>
   );
 }

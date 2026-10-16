@@ -61,7 +61,7 @@ export default function TournamentGameBoard() {
     return (
       <div
         className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold border-2 ${
-          piece.color === "r" ? "bg-red-100 text-red-700 border-red-500" : "bg-gray-800 text-gray-100 border-gray-600"
+          piece.color === "r" ? "bg-primary text-primary border-primary/30" : "bg-secondary text-foreground border-border"
         } ${currentTurn === piece.color ? "ring-2 ring-yellow-400" : ""}`}
         style={{
           left: `${(piece.x * 100) / 8}%`,
@@ -75,14 +75,14 @@ export default function TournamentGameBoard() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100">
-        <div className="text-amber-800">Đang tải...</div>
+      <div className="flex justify-center items-center min-h-dvh bg-background">
+        <div className="text-foreground">Đang tải...</div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 p-4">
+    <div className="flex flex-col items-center min-h-dvh bg-background p-4">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
           <Link href="/giai-dau">
@@ -90,47 +90,47 @@ export default function TournamentGameBoard() {
               <ChevronLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold text-amber-800">Cờ Tướng</h1>
-          <Button variant="outline" size="sm" className="text-red-500 border-red-500">
+          <h1 className="text-xl font-bold text-foreground">Cờ Tướng</h1>
+          <Button variant="outline" size="sm" className="text-primary border-primary/30">
             <Flag className="h-4 w-4 mr-1" />
             Đầu hàng
           </Button>
         </div>
 
         {/* Tournament info banner */}
-        <div className="bg-amber-600 text-white py-2 px-4 rounded-t-lg text-center font-semibold mb-2 shadow-sm">
+        <div className="bg-secondary text-white py-2 px-4 rounded-t-lg text-center font-semibold mb-2 ">
           Round 1 - Giải Cờ Tướng Mùa Xuân 2023
         </div>
 
         {/* Black player (top) */}
         <div
           className={`flex items-center justify-between p-3 rounded-t-lg ${
-            currentTurn === "b" ? "bg-amber-100" : "bg-white"
-          } mb-2 shadow-sm`}
+            currentTurn === "b" ? "bg-secondary" : "bg-card"
+          } mb-2 `}
         >
           <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10 border border-gray-300">
+            <Avatar className="h-10 w-10 border border-border">
               <AvatarImage src="/placeholder.svg" alt={players.black.username} />
-              <AvatarFallback className="bg-gray-800 text-gray-100">
+              <AvatarFallback className="bg-secondary text-foreground">
                 {players.black.username.substring(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div>
               <p className="font-medium">{players.black.username}</p>
-              <div className="flex items-center text-sm text-gray-500">
-                <Trophy className="h-3 w-3 mr-1 text-amber-500" />
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Trophy className="h-3 w-3 mr-1 text-primary" />
                 <span>{players.black.points}</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full">
-            <Clock className="h-4 w-4 text-gray-500" />
+          <div className="flex items-center gap-2 bg-secondary px-3 py-1 rounded-full">
+            <Clock className="h-4 w-4 text-muted-foreground" />
             <span className="font-mono">{players.black.timeLeft}</span>
           </div>
         </div>
 
         {/* Game board */}
-        <div className="relative w-full aspect-[9/10] bg-amber-200 rounded-md shadow-md mb-2">
+        <div className="relative w-full aspect-[9/10] bg-secondary rounded-md  mb-2">
           {/* Board grid lines */}
           <svg
             className="absolute inset-0 w-full h-full"
@@ -234,26 +234,26 @@ export default function TournamentGameBoard() {
         {/* Red player (bottom) */}
         <div
           className={`flex items-center justify-between p-3 rounded-b-lg ${
-            currentTurn === "r" ? "bg-amber-100" : "bg-white"
-          } shadow-sm`}
+            currentTurn === "r" ? "bg-secondary" : "bg-card"
+          } `}
         >
           <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10 border-2 border-red-400">
+            <Avatar className="h-10 w-10 border-2 border-primary/30">
               <AvatarImage src="/placeholder.svg" alt={players.red.username} />
-              <AvatarFallback className="bg-red-100 text-red-700">
+              <AvatarFallback className="bg-primary text-primary">
                 {players.red.username.substring(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div>
               <p className="font-medium">{players.red.username}</p>
-              <div className="flex items-center text-sm text-gray-500">
-                <Trophy className="h-3 w-3 mr-1 text-amber-500" />
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Trophy className="h-3 w-3 mr-1 text-primary" />
                 <span>{players.red.points}</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full">
-            <Clock className="h-4 w-4 text-gray-500" />
+          <div className="flex items-center gap-2 bg-secondary px-3 py-1 rounded-full">
+            <Clock className="h-4 w-4 text-muted-foreground" />
             <span className="font-mono">{players.red.timeLeft}</span>
           </div>
         </div>
