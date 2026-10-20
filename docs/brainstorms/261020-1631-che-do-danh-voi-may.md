@@ -112,6 +112,18 @@ Tải Pikafish release + file `.nnue` (https://github.com/official-pikafish/Pika
 - Giấy phép: binary/mã GPL-3.0 (`Copying.txt`), mạng `pikafish.nnue` theo `NNUE-License.md`. Không commit vào repo; đặt ở `~/engines/pikafish/` (`ai.engine.path` / `ai.engine.nnue`).
 - Vẫn chưa kiểm chứng: license ElephantEye, các số liệu Fairy-Stockfish.
 
+## 7. Đã triển khai (2026-10-20)
+
+**Chạy**: cài engine như mục 6 (mặc định `~/engines/pikafish/`, đổi bằng `ai.engine.path` / `ai.engine.nnue` hoặc biến môi trường `AI_ENGINE_PATH`, `AI_ENGINE_NNUE`); `cd be && sh ./mvnw spring-boot:run`; `cd fe && npm install --legacy-peer-deps && npm run dev`. Trang chủ → "Chơi với máy" → chọn mức 1–5 + bên → vào `/game-board?matchId=…` (cùng bàn cờ với PvP). Không có engine thì BE vẫn chạy, `/game.withAI` trả lỗi "Máy chưa sẵn sàng".
+
+**Khác với kế hoạch ở mục 4**
+- Người chơi ảo `da1` tự được tạo nếu chưa có trong DB. Máy không bị trừ đồng hồ; ván với máy không tính Elo (delta = 0), không có cầu hòa (nút thay bằng "Đi lại").
+- Hoàn tác tối đa 3 lần/ván; lệnh STOMP `/app/match.{id}.undo`; broadcast lên `/topic/match.{id}.board` với `undo: true`, `canUndo`, `undosLeft`. Nước máy tính muộn bị bỏ nhờ `GameSession.version`.
+- Máy cầm đỏ chờ 1,5 giây trước nước đầu để client kịp subscribe; mọi nước máy chờ tối thiểu 0,6 giây cho đỡ giật.
+- Engine lỗi/trả nước sai → thử lại 1 lần rồi chọn ngẫu nhiên một nước hợp lệ; hết slot sau 30 giây → báo "Máy đang bận".
+
+**Chưa làm / hạn chế**: chưa có luật cấm chiếu dai / hòa sau N nước không ăn quân; nếu BE khởi động lại giữa ván khi đang tới lượt máy thì máy không tự đi tiếp; chưa có bản phát hành/Docker cho engine.
+
 ## Nguồn
 - Pikafish: https://github.com/official-pikafish/Pikafish (GPL-3.0, UCI, NNUE)
 - Fairy-Stockfish: https://github.com/fairy-stockfish/Fairy-Stockfish (GPL-3.0, Xiangqi, NNUE riêng, ffish.js)
