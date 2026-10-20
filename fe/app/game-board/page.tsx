@@ -34,6 +34,7 @@ import {
   BoardEffectsStyles,
   Burst,
   CaptureBurst,
+  pieceKindOf,
   CheckOverlay,
   LandRing,
 } from "@/components/board-effects";
@@ -72,7 +73,7 @@ export default function GameBoard() {
   } | null>(null);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const prevBoardRef = useRef<string | null>(null);
-  // Tăng mỗi khi có nước chiếu: kích hoạt nháy đỏ và dấu 將軍
+  // Tăng mỗi khi có nước chiếu: kích hoạt nháy đỏ và dấu CHIẾU TƯỚNG
   const [checkPulse, setCheckPulse] = useState(0);
   // Nền riêng cho phòng đấu (xem globals.css: body[data-scene="match"])
   useEffect(() => {
@@ -156,9 +157,18 @@ export default function GameBoard() {
         const id = fxId.current;
         setLastMove({ fromX: data.fromX, fromY: data.fromY, toX: data.toX, toY: data.toY, id });
         const capturedChar = prev ? prev[data.toY * 9 + data.toX] : ".";
-        if (capturedChar && capturedChar !== ".") {
+        const victim = pieceKindOf(capturedChar);
+        if (capturedChar && victim) {
           const color = capturedChar === capturedChar.toLowerCase() ? "r" : "b";
-          setBursts((list) => [...list, { id, x: data.toX, y: data.toY, color }]);
+          // Quân đi ăn: lấy từ ô xuất phát trên bàn cờ trước (an toàn hơn tin vào pieceType)
+          const attacker = pieceKindOf(prev?.[data.fromY * 9 + data.fromX]) ?? "p";
+          setBursts((list) => [
+            ...list,
+            {
+              id, x: data.toX, y: data.toY, color, attacker, victim,
+              dx: Math.sign(data.toX - data.fromX), dy: Math.sign(data.toY - data.fromY),
+            },
+          ]);
           setTimeout(() => setBursts((list) => list.filter((b) => b.id !== id)), 1100);
           playSound("capture", soundRef.current);
         } else {

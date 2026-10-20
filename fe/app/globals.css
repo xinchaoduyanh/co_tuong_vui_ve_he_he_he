@@ -169,7 +169,7 @@ body::before {
 @keyframes xq-landring { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
 .xq-landring { transform-box: fill-box; transform-origin: center; animation: xq-landring 0.55s ease-out forwards; pointer-events: none; }
 
-/* Chiếu tướng: bàn cờ nháy đỏ và đóng dấu 將軍 */
+/* Chiếu tướng: bàn cờ nháy đỏ và đóng dấu CHIẾU TƯỚNG */
 @keyframes xq-flash { from { opacity: 1; } to { opacity: 0; } }
 .xq-flash { animation: xq-flash 0.9s ease-out forwards; pointer-events: none; background: radial-gradient(circle at center, transparent 35%, hsl(var(--primary) / 0.55) 100%); }
 @keyframes xq-stamp {
