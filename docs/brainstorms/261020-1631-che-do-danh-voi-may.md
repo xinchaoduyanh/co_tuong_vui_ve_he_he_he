@@ -102,6 +102,16 @@ Tải Pikafish release + file `.nnue` (https://github.com/official-pikafish/Pika
 - Hosting hiện tại có cho chạy binary native không (nếu BE chạy trên PaaS hạn chế → dùng phương án WASM ở FE).
 - Luật chiếu dai/lặp thế: engine tính tốt, nhưng `XiangqiRules` của BE chưa có luật cấm chiếu dai → ván có thể kéo dài; cân nhắc giới hạn số nước (hòa sau N nước không ăn quân).
 
+## 6. Kết quả Bước 0 (đã chạy thật, 2026-10-20)
+
+- Release mới nhất: `Pikafish-2026-09-06` (GitHub). Asset duy nhất: `Pikafish.2026-09-06.7z` (~53,6 MB) chứa binary cho từng OS + `pikafish.nnue`. Bản Linux là `Pikafish-Linux-x86-64-universal` (**6,9 MB**, ELF x86-64, tự chọn tập lệnh lúc chạy — không có file riêng avx2/bmi2/avx512). Máy dev có avx2, bmi2, avx512f/bw, vnni; chạy ~0,9 triệu nps/1 luồng.
+- `pikafish.nnue`: **50.706.378 byte (~48,4 MiB, log engine ghi "64MiB" bộ nhớ)**. Engine tìm file theo option `EvalFile` (mặc định `pikafish.nnue` trong thư mục làm việc) → khi spawn phải set `EvalFile` đường dẫn tuyệt đối hoặc `directory` của process.
+- Option `uci` liệt kê: `Debug Log File, NumaPolicy, Threads, Hash, Clear Hash, Ponder, MultiPV (1–128), Move Overhead, nodestime, UCI_ShowWDL, EvalFile`. **Không có `Skill Level`, `UCI_LimitStrength`, `UCI_Elo`** → độ khó phải tự cài bằng depth/movetime + MultiPV + chọn nước (đúng hướng ở mục 3).
+- Tọa độ UCI: cột `a`–`i`, hàng `0`–`9` (không có `a10`). FEN chuẩn: hàng 9 (đen, chữ thường) trước, đỏ = chữ HOA ở dưới; `w` = đỏ đi. Test khai cuộc: `position fen rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w` + `go movetime 500` → `bestmove b2e2 ponder b9c7` (depth 18, cp +24).
+- `MultiPV 4` + `go depth 1` hoạt động (trả 4 dòng `info … multipv N … pv …` rồi `bestmove`).
+- Giấy phép: binary/mã GPL-3.0 (`Copying.txt`), mạng `pikafish.nnue` theo `NNUE-License.md`. Không commit vào repo; đặt ở `~/engines/pikafish/` (`ai.engine.path` / `ai.engine.nnue`).
+- Vẫn chưa kiểm chứng: license ElephantEye, các số liệu Fairy-Stockfish.
+
 ## Nguồn
 - Pikafish: https://github.com/official-pikafish/Pikafish (GPL-3.0, UCI, NNUE)
 - Fairy-Stockfish: https://github.com/fairy-stockfish/Fairy-Stockfish (GPL-3.0, Xiangqi, NNUE riêng, ffish.js)
