@@ -33,6 +33,9 @@ public class Match {
     @Column(name = "is_ai_game")
     private boolean isAIGame; // Flag to indicate if this is an AI game
 
+    // Độ khó 1-5 của trận với máy; null với trận người-người
+    private Integer aiLevel;
+
     @ManyToOne
     private Player winner;
 

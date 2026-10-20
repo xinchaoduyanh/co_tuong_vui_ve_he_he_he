@@ -1,5 +1,8 @@
 package com.chessxiangqi.xiangqi_backend.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.chessxiangqi.xiangqi_backend.dto.PlayerPublicDto;
 
 import lombok.Data;
@@ -35,4 +38,17 @@ public class GameSession {
     // Thông tin hai người chơi giữ sẵn để snapshot không phải hỏi DB; làm mới khi trận kết thúc
     private PlayerPublicDto redInfo;
     private PlayerPublicDto blackInfo;
+
+    // Trận với máy: aiLevel 1-5 (0 = trận người-người), aiSide là bên máy cầm
+    private int aiLevel;
+    private char aiSide;
+    private int undosUsed;
+    // Tăng mỗi khi thế cờ đổi (đi, hoàn tác) để nước máy tính muộn không áp vào thế khác
+    private int version;
+    // Các nước đã đi dạng UCI từ thế khai cuộc (chỉ giữ cho trận với máy)
+    private final List<String> moveHistory = new ArrayList<>();
+
+    public boolean isAiGame() {
+        return aiLevel > 0;
+    }
 }

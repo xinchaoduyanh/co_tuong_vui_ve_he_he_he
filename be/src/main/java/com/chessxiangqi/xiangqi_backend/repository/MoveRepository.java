@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.chessxiangqi.xiangqi_backend.model.Move;
 
@@ -12,4 +14,7 @@ import com.chessxiangqi.xiangqi_backend.model.Move;
 public interface MoveRepository extends JpaRepository<Move, String> {
     List<Move> findByMatchIdOrderByTurnNumberAsc(String matchId);
     Optional<Move> findTopByMatchIdOrderByTurnNumberDesc(String matchId);
-} 
+    @Transactional
+    @Modifying
+    void deleteByMatchIdAndTurnNumberGreaterThan(String matchId, int turnNumber);
+}

@@ -52,6 +52,11 @@ public class MoveService {
             .orElseThrow(() -> new RuntimeException("No moves found for match: " + matchId));
     }
 
+    /** Xoá các nước có số thứ tự lớn hơn {@code turnNumber} (dùng cho hoàn tác). */
+    public void deleteMovesAfter(String matchId, int turnNumber) {
+        moveRepository.deleteByMatchIdAndTurnNumberGreaterThan(matchId, turnNumber);
+    }
+
     public int getNextTurnNumber(String matchId) {
         Move latestMove = moveRepository.findTopByMatchIdOrderByTurnNumberDesc(matchId)
             .orElse(null);

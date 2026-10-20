@@ -21,13 +21,13 @@ import com.chessxiangqi.xiangqi_backend.dto.ChallengeMessage;
 import com.chessxiangqi.xiangqi_backend.dto.DrawOfferRequest;
 import com.chessxiangqi.xiangqi_backend.dto.DrawResponseRequest;
 import com.chessxiangqi.xiangqi_backend.dto.SurrenderRequest;
+import com.chessxiangqi.xiangqi_backend.model.GameSession;
 import com.chessxiangqi.xiangqi_backend.model.Match;
 import com.chessxiangqi.xiangqi_backend.model.Move;
 import com.chessxiangqi.xiangqi_backend.model.Player;
 import com.chessxiangqi.xiangqi_backend.model.PlayerMatch;
 import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
 import com.chessxiangqi.xiangqi_backend.repository.PlayerMatchRepository;
-import com.chessxiangqi.xiangqi_backend.service.AIGameService;
 import com.chessxiangqi.xiangqi_backend.service.ChallengeService;
 import com.chessxiangqi.xiangqi_backend.service.GameSessionService;
 import com.chessxiangqi.xiangqi_backend.service.MatchService;
@@ -35,7 +35,7 @@ import com.chessxiangqi.xiangqi_backend.service.MoveService;
 import com.chessxiangqi.xiangqi_backend.service.PlayerMatchService;
 import com.chessxiangqi.xiangqi_backend.service.PlayerService;
 import com.chessxiangqi.xiangqi_backend.service.WebSocketService;
-import com.chessxiangqi.xiangqi_backend.util.BoardChecker;
+import com.chessxiangqi.xiangqi_backend.util.XiangqiNotation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -71,9 +71,6 @@ public class WebSocketController {
 
     @Autowired
     private ChallengeService challengeService;
-
-    @Autowired
-    private AIGameService aiGameService;
 
     @Autowired
     private GameSessionService gameSessionService;
@@ -290,11 +287,6 @@ public class WebSocketController {
     public void handleMove(@Payload String moveData, @DestinationVariable String matchId,
                            SimpMessageHeaderAccessor headerAccessor) {
         String username = (String) headerAccessor.getSessionAttributes().get("username");
-        Optional<Match> matchOpt = matchService.getMatchById(matchId);
-        if (matchOpt.isPresent() && isAIMatch(matchOpt.get())) {
-            handleAIMove(moveData, matchId);
-            return;
-        }
         try {
             // Server tự kiểm tra lượt, người chơi và luật; client chỉ gửi tọa độ
             JsonNode node = objectMapper.readTree(moveData);
@@ -309,176 +301,17 @@ public class WebSocketController {
         }
     }
 
-    /** Nước đi trong trận với AI: giữ nguyên luồng cũ, không thuộc phạm vi cải thiện đợt này. */
-    private void handleAIMove(String moveData, String matchId) {
+    /** Đi lại (chỉ ván với máy): hoàn tác cặp nước gần nhất. */
+    @MessageMapping("/match.{matchId}.undo")
+    public void handleUndo(@DestinationVariable String matchId, SimpMessageHeaderAccessor headerAccessor) {
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
         try {
-            // 1. Parse dữ liệu từ FE
-            Map<String, Object> move = new ObjectMapper().readValue(moveData, Map.class);
-
-            // 2. Lấy các trường cần thiết
-            String boardState = (String) move.get("boardState");
-            String moveDescription = (String) move.get("moveDescription");
-            Integer fromX = (Integer) move.get("fromX");
-            Integer fromY = (Integer) move.get("fromY");
-            Integer toX = (Integer) move.get("toX");
-            Integer toY = (Integer) move.get("toY");
-            String pieceType = (String) move.get("pieceType");
-            String color = (String) move.get("color");
-            String playerId = (String) move.get("playerId");
-
-            // 3. Lưu nước đi vào database
-            Move moveEntity = new Move();
-            moveEntity.setMatchId(matchId);
-            moveEntity.setBoardState(boardState);
-            moveEntity.setTurnNumber(moveService.getNextTurnNumber(matchId));
-            moveEntity.setMoveDescription(moveDescription);
-
-            // Lấy nước đi trước để xác định nextTurn
-            Move previousMove = moveService.getLatestMove(matchId);
-            moveEntity.setNextTurn(previousMove.getNextTurn().equals("r") ? "b" : "r");
-
-            moveService.saveMove(moveEntity);
-
-            // 4. Gửi cập nhật trạng thái bàn cờ cho cả hai người chơi
-            Map<String, Object> response = new HashMap<>();
-            response.put("boardState", boardState);
-            response.put("moveDescription", moveDescription);
-            response.put("fromX", fromX);
-            response.put("fromY", fromY);
-            response.put("toX", toX);
-            response.put("toY", toY);
-            response.put("pieceType", pieceType);
-            response.put("color", color);
-            response.put("playerId", playerId);
-            response.put("nextTurn", moveEntity.getNextTurn());
-
-            // Thêm đoạn kiểm tra chiếu
-            Map<String, Boolean> checkStatus = BoardChecker.checkBoardState(boardState);
-            
-            // Thêm thông tin chiếu vào response
-            response.put("isCheck", checkStatus.get("redCheck") || checkStatus.get("blackCheck"));
-            response.put("redCheck", checkStatus.get("redCheck"));
-            response.put("blackCheck", checkStatus.get("blackCheck"));
-
-            messagingTemplate.convertAndSend(
-                "/topic/match." + matchId + ".board",
-                response
-            );
-
-            // 5. Kiểm tra nếu là lượt của AI
-            Optional<Match> currentMatchOpt = matchService.getMatchById(matchId);
-            if (currentMatchOpt.isPresent()) {
-                Match currentMatch = currentMatchOpt.get();
-                if (currentMatch.getPlayer2().getUsername().equals("da1") && moveEntity.getNextTurn().equals("b")) {
-                    // Xử lý nước đi của AI
-                    Move aiMove = aiGameService.processAIMove(matchId, boardState, moveEntity.getNextTurn());
-                    if (aiMove != null) {
-                        // Gửi nước đi của AI
-                        Map<String, Object> aiResponse = new HashMap<>();
-                        aiResponse.put("boardState", aiMove.getBoardState());
-                        aiResponse.put("nextTurn", aiMove.getNextTurn());
-                        messagingTemplate.convertAndSend(
-                            "/topic/match." + matchId + ".board",
-                            aiResponse
-                        );
-                    }
-                }
-            }
-
-            // 6. Kiểm tra kết thúc game
-            boolean redKingAlive = boardState.contains("k");
-            boolean blackKingAlive = boardState.contains("K");
-            
-            if (!redKingAlive || !blackKingAlive) {
-                log.info("Game over detected - Red king: {}, Black king: {}", redKingAlive, blackKingAlive);
-                Optional<Match> matchOpt = matchService.getMatchById(matchId);
-                if (matchOpt.isEmpty()) {
-                    log.error("Match not found for ID: {}", matchId);
-                    return;
-                }
-                Match match = matchOpt.get();
-                String player1Id = match.getPlayer1().getId();
-                String player2Id = match.getPlayer2().getId();
-                String winnerId = redKingAlive ? player1Id : player2Id;
-                log.info("Winner determined: {} (Red king alive: {}, Black king alive: {})", 
-                    winnerId, redKingAlive, blackKingAlive);
-
-                // 1. Lấy PlayerMatch hiện tại
-                List<PlayerMatch> existingMatches = playerMatchRepository.findByMatchId(matchId);
-                log.info("Found {} existing PlayerMatch records", existingMatches.size());
-                
-                // 2. Cập nhật kết quả cho PlayerMatch
-                for (PlayerMatch pm : existingMatches) {
-                    if (pm.getPlayerId().equals(winnerId)) {
-                        pm.setResult("WIN");
-                        pm.setEloChange(calculateEloChange(match.getPlayer1(), match.getPlayer2(), true));
-                    } else {
-                        pm.setResult("LOSE");
-                        pm.setEloChange(calculateEloChange(match.getPlayer1(), match.getPlayer2(), false));
-                    }
-                    playerMatchRepository.save(pm);
-                }
-                log.info("Updated PlayerMatch records");
-
-                // 3. Cập nhật thông tin người chơi
-                for (PlayerMatch pm : existingMatches) {
-                    Player playerToUpdate = pm.getPlayerId().equals(player1Id) ? match.getPlayer1() : match.getPlayer2();
-                    log.info("Updating player {} with result {} and eloChange {}", 
-                        playerToUpdate.getUsername(), pm.getResult(), pm.getEloChange());
-                    
-                    // Lấy thông tin player mới nhất từ database
-                    Optional<Player> currentPlayerOpt = playerService.getPlayerById(playerToUpdate.getId());
-                    if (currentPlayerOpt.isPresent()) {
-                        playerToUpdate = currentPlayerOpt.get();
-                        log.info("Current player stats - Elo: {}, Wins: {}, Loses: {}, Draws: {}", 
-                            playerToUpdate.getElo(), playerToUpdate.getWins(), 
-                            playerToUpdate.getLoses(), playerToUpdate.getDraws());
-                    }
-                    
-                    playerService.applyMatchResult(
-                        playerToUpdate,
-                        pm.getEloChange(),
-                        pm.getResult()
-                    );
-                    
-                    // Kiểm tra sau khi cập nhật
-                    Optional<Player> updatedPlayerOpt = playerService.getPlayerById(playerToUpdate.getId());
-                    if (updatedPlayerOpt.isPresent()) {
-                        Player updatedPlayer = updatedPlayerOpt.get();
-                        log.info("Updated player stats - Elo: {}, Wins: {}, Loses: {}, Draws: {}", 
-                            updatedPlayer.getElo(), updatedPlayer.getWins(), 
-                            updatedPlayer.getLoses(), updatedPlayer.getDraws());
-                    }
-                }
-                log.info("Updated player stats");
-
-                // 4. Lấy thông tin người chơi đã cập nhật
-                Player updatedPlayer1 = playerService.getPlayerById(player1Id).orElse(null);
-                Player updatedPlayer2 = playerService.getPlayerById(player2Id).orElse(null);
-                log.info("Retrieved updated player info");
-
-                // 5. Gửi thông tin kết thúc trận đấu
-                Map<String, Object> endGameMsg = new HashMap<>();
-                endGameMsg.put("type", "END_GAME");
-                endGameMsg.put("winner", redKingAlive ? "red" : "black");
-                endGameMsg.put("player1", updatedPlayer1);
-                endGameMsg.put("player2", updatedPlayer2);
-                endGameMsg.put("player1EloChange", existingMatches.stream()
-                    .filter(pm -> pm.getPlayerId().equals(player1Id))
-                    .findFirst()
-                    .map(PlayerMatch::getEloChange)
-                    .orElse(0));
-                endGameMsg.put("player2EloChange", existingMatches.stream()
-                    .filter(pm -> pm.getPlayerId().equals(player2Id))
-                    .findFirst()
-                    .map(PlayerMatch::getEloChange)
-                    .orElse(0));
-                log.info("Sending end game message: {}", endGameMsg);
-                messagingTemplate.convertAndSend("/topic/match." + matchId + ".end", endGameMsg);
-                return;
-            }
+            gameSessionService.undo(matchId, username);
+        } catch (GameSessionService.GameActionException e) {
+            gameSessionService.sendError(username, e.getMessage());
         } catch (Exception e) {
-            log.error("Error handling move: {}", e.getMessage());
+            log.error("Error undoing move: {}", e.getMessage(), e);
+            gameSessionService.sendError(username, "Không thể đi lại");
         }
     }
 
@@ -531,29 +364,6 @@ public class WebSocketController {
     public void handleChallengeSend(@Payload String targetUsername, SimpMessageHeaderAccessor headerAccessor) {
         String fromUsername = (String) headerAccessor.getSessionAttributes().get("username");
         challengeService.sendChallenge(fromUsername, targetUsername);
-    }
-
-    private boolean isAIMatch(Match match) {
-        return match.isAIGame() || "da1".equals(match.getPlayer2().getUsername());
-    }
-
-    // Helper method to calculate Elo change (chỉ còn dùng cho luồng AI)
-    private int calculateEloChange(Player player1, Player player2, boolean isWinner) {
-        int basePoint = 20;
-        double ratio = (double) Math.max(player1.getElo(), player2.getElo()) / Math.min(player1.getElo(), player2.getElo());
-        int pointChange;
-        
-        if (isWinner) {
-            pointChange = player1.getElo() < player2.getElo() ? 
-                (int) Math.round(basePoint * ratio) : 
-                (int) Math.round(basePoint / ratio);
-        } else {
-            pointChange = player1.getElo() < player2.getElo() ? 
-                -(int) Math.round(basePoint / ratio) : 
-                -(int) Math.round(basePoint * ratio);
-        }
-        
-        return pointChange;
     }
 
     @MessageMapping("/game.surrender")
@@ -639,103 +449,48 @@ public class WebSocketController {
         }
     }
 
+    /** Bắt đầu ván với máy. Payload JSON: {"username": "...", "level": 1-5, "side": "r" | "b"} (side = bên người cầm). */
     @MessageMapping("/game.withAI")
-    public void startGameWithAI(@Payload String username, SimpMessageHeaderAccessor headerAccessor) {
-        log.debug("[BE-AI] Starting game with AI for player: {}", username);
-        
+    public void startGameWithAI(@Payload String payload, SimpMessageHeaderAccessor headerAccessor) {
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
         try {
-            // 1. Lấy thông tin người chơi
-            Optional<Player> playerOpt = playerService.getPlayerByUsername(username);
-            if (playerOpt.isEmpty()) {
-                log.error("[BE-AI] Player not found: {}", username);
-                Map<String, String> errorResponse = new HashMap<>();
-                errorResponse.put("type", "ERROR");
-                errorResponse.put("message", "Không tìm thấy người chơi");
-                messagingTemplate.convertAndSendToUser(
-                    username,
-                    "/queue/game.withAI",
-                    errorResponse
-                );
-                return;
+            JsonNode node = objectMapper.readTree(payload);
+            if (username == null) {
+                username = node.path("username").asText(null);
             }
-            Player player = playerOpt.get();
+            String side = node.path("side").asText("r");
+            GameSession session = gameSessionService.startAiGame(
+                username, node.path("level").asInt(0), side.isEmpty() ? ' ' : side.charAt(0));
 
-            // 2. Lấy thông tin AI player
-            Optional<Player> aiPlayerOpt = playerService.getPlayerByUsername("da1");
-            if (aiPlayerOpt.isEmpty()) {
-                log.error("[BE-AI] AI player not found");
-                Map<String, String> errorResponse = new HashMap<>();
-                errorResponse.put("type", "ERROR");
-                errorResponse.put("message", "Không thể tạo trận đấu với AI");
-                messagingTemplate.convertAndSendToUser(
-                    username,
-                    "/queue/game.withAI",
-                    errorResponse
-                );
-                return;
-            }
-            Player aiPlayer = aiPlayerOpt.get();
-
-            // 3. Tạo match mới
-            Match match = new Match();
-            match.setId(UUID.randomUUID().toString());
-            match.setPlayer1(player);
-            match.setPlayer2(aiPlayer);
-            match.setCreatedAt(new Date());
-            match = matchService.createMatch(match);
-
-            // 4. Tạo move đầu tiên với trạng thái bàn cờ ban đầu
-            Move initialMove = new Move();
-            initialMove.setMatchId(match.getId());
-            initialMove.setTurnNumber(0);
-            String initialBoardState = "rheakaehr..........c.....c.p.p.p.p.p..................P.P.P.P.P.C.....C..........RHEAKAEHR";
-            initialMove.setBoardState(initialBoardState);
-            initialMove.setNextTurn("r");
-            moveService.saveMove(initialMove);
-
-            // 5. Tạo PlayerMatch cho cả hai người chơi
-            playerMatchService.createPlayerMatch(match.getPlayer1(), match.getPlayer2(), match);
-            playerMatchService.createPlayerMatch(match.getPlayer2(), match.getPlayer1(), match);
-
-            // 6. Cập nhật trạng thái người chơi thành IN_GAME
-            playerService.updatePlayerStatus(username, PlayerStatus.IN_GAME);
-
-            // 7. Gửi thông tin match cho người chơi
+            Match match = matchService.getMatchById(session.getMatchId()).orElseThrow();
+            Player red = match.getPlayer1();
+            Player black = match.getPlayer2();
             Map<String, Object> response = new HashMap<>();
             response.put("type", "GAME_STARTED");
             response.put("matchId", match.getId());
-            response.put("player1", Map.of(
-                "id", player.getId(),
-                "username", player.getUsername(),
-                "color", "r",
-                "elo", player.getElo()
-            ));
-            response.put("player2", Map.of(
-                "id", aiPlayer.getId(),
-                "username", aiPlayer.getUsername(),
-                "color", "b",
-                "elo", aiPlayer.getElo()
-            ));
+            response.put("player1", Map.of("id", red.getId(), "username", red.getUsername(), "color", "r", "elo", red.getElo()));
+            response.put("player2", Map.of("id", black.getId(), "username", black.getUsername(), "color", "b", "elo", black.getElo()));
             response.put("currentTurn", "r");
-            response.put("initialBoardState", initialBoardState);
-
-            messagingTemplate.convertAndSendToUser(
-                username,
-                "/queue/game.withAI",
-                response
-            );
-
-            log.debug("[BE-AI] Game with AI started successfully for player: {}", username);
+            response.put("initialBoardState", XiangqiNotation.INITIAL_BOARD);
+            response.put("aiLevel", session.getAiLevel());
+            response.put("aiSide", String.valueOf(session.getAiSide()));
+            messagingTemplate.convertAndSendToUser(username, "/queue/game.withAI", response);
+            log.info("[AI] Ván với máy: matchId={}, người chơi={}, level={}", match.getId(), username, session.getAiLevel());
+        } catch (GameSessionService.GameActionException e) {
+            sendAiError(username, e.getMessage());
         } catch (Exception e) {
-            log.error("[BE-AI] Error starting game with AI: {}", e.getMessage());
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("type", "ERROR");
-            errorResponse.put("message", "Lỗi khi tạo trận đấu với AI");
-            messagingTemplate.convertAndSendToUser(
-                username,
-                "/queue/game.withAI",
-                errorResponse
-            );
+            log.error("[AI] Error starting game with AI", e);
+            sendAiError(username, "Lỗi khi tạo trận đấu với máy");
         }
     }
-} 
+
+    private void sendAiError(String username, String message) {
+        if (username == null) {
+            return;
+        }
+        Map<String, String> error = new HashMap<>();
+        error.put("type", "ERROR");
+        error.put("message", message);
+        messagingTemplate.convertAndSendToUser(username, "/queue/game.withAI", error);
+    }
+}

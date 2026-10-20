@@ -6,7 +6,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.function.LongSupplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,12 +28,15 @@ import com.chessxiangqi.xiangqi_backend.model.Player;
 import com.chessxiangqi.xiangqi_backend.model.PlayerMatch;
 import com.chessxiangqi.xiangqi_backend.model.PlayerStatus;
 import com.chessxiangqi.xiangqi_backend.repository.PlayerMatchRepository;
+import com.chessxiangqi.xiangqi_backend.service.ai.EngineMoveService;
+import com.chessxiangqi.xiangqi_backend.util.XiangqiNotation;
 import com.chessxiangqi.xiangqi_backend.util.XiangqiRules;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Quản lý trận người-người đang diễn ra. Server là nguồn sự thật:
+ * Quản lý trận đang diễn ra (người-người và người-máy). Server là nguồn sự thật:
  * kiểm tra lượt, người chơi và luật cờ; mọi kết thúc trận đi qua {@link #finishGame}.
  */
 @Slf4j
@@ -38,6 +47,20 @@ public class GameSessionService {
 
     /** Mỗi bên có 10 phút cho cả ván. */
     public static final long TURN_LIMIT_MS = 600_000L;
+
+    /** Người chơi ảo cầm quân khi đánh với máy. */
+    public static final String AI_USERNAME = "da1";
+
+    /** Số lần hoàn tác tối đa mỗi ván với máy. */
+    public static final int MAX_UNDOS = 3;
+
+    /** Máy đi nhanh quá thì thấy giật; chờ tối thiểu chừng này trước khi đi. */
+    private static final long AI_MIN_THINK_MS = 600;
+
+    /** Máy cầm quân đỏ đi trước: chờ client kịp vào phòng và đăng ký nhận nước đi. */
+    private static final long AI_FIRST_MOVE_DELAY_MS = 1500;
+
+    private static final Pattern MOVE_DESCRIPTION = Pattern.compile("^\\w (\\d),(\\d) -> (\\d),(\\d)$");
 
     /** Mất kết nối quá 60 giây thì bị xử thua (ABANDON). */
     public static final long DISCONNECT_GRACE_MS = 60_000L;
@@ -61,7 +84,20 @@ public class GameSessionService {
     private PlayerMatchRepository playerMatchRepository;
 
     @Autowired
+    private PlayerMatchService playerMatchService;
+
+    @Autowired
+    private EngineMoveService engineMoveService;
+
+    @Autowired
     private SimpMessagingTemplate messagingTemplate;
+
+    // Tính nước máy đi ở luồng riêng: engine mất 0,1-2 giây, không được chặn luồng STOMP
+    private final ExecutorService aiExecutor = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "ai-move");
+        t.setDaemon(true);
+        return t;
+    });
 
     // Trận đang chơi, theo matchId
     private final Map<String, GameSession> sessions = new ConcurrentHashMap<>();
@@ -129,6 +165,11 @@ public class GameSessionService {
         session.setLastMoveDescription(latest.getMoveDescription());
         session.setRedInfo(PlayerPublicDto.from(match.getPlayer1()));
         session.setBlackInfo(PlayerPublicDto.from(match.getPlayer2()));
+        if (match.getAiLevel() != null && match.getAiLevel() > 0) {
+            session.setAiLevel(match.getAiLevel());
+            session.setAiSide(AI_USERNAME.equals(match.getPlayer1().getUsername()) ? 'r' : 'b');
+            session.getMoveHistory().addAll(historyOf(match.getId()));
+        }
         if (match.getWinner() != null) {
             session.setWinnerColor(match.getWinner().getId().equals(match.getPlayer1().getId()) ? 'r' : 'b');
         }
@@ -148,8 +189,11 @@ public class GameSessionService {
             if (side != session.getTurn()) {
                 throw new GameActionException("Chưa đến lượt bạn");
             }
-            // Hết giờ trước khi kịp đi: thua ngay, nước đi không được áp dụng
-            if (settleClock(session, clock.getAsLong())) {
+            // Hết giờ trước khi kịp đi: thua ngay, nước đi không được áp dụng.
+            // Máy không bị tính giờ suy nghĩ (chỉ đồng hồ của người chơi chạy).
+            if (AI_USERNAME.equals(username) && session.isAiGame()) {
+                session.setLastTickAt(clock.getAsLong());
+            } else if (settleClock(session, clock.getAsLong())) {
                 finishGame(session, "TIMEOUT", XiangqiRules.opponent(side));
                 return;
             }
@@ -190,6 +234,10 @@ public class GameSessionService {
             session.setNextTurnNumber(session.getNextTurnNumber() + 1);
             session.setCheck(entity.isCheck());
             session.setLastMoveDescription(description);
+            session.setVersion(session.getVersion() + 1);
+            if (session.isAiGame()) {
+                session.getMoveHistory().add(XiangqiNotation.toUci(move));
+            }
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("boardState", next);
@@ -214,6 +262,8 @@ public class GameSessionService {
             if (status == XiangqiRules.Status.CHECKMATE || status == XiangqiRules.Status.STALEMATE) {
                 // Bên đến lượt không còn nước đi: thua (kể cả hết nước khi không bị chiếu)
                 finishGame(session, status.name(), side);
+            } else if (session.isAiGame() && nextSide == session.getAiSide()) {
+                scheduleAiMove(session, 0);
             }
         }
     }
@@ -242,6 +292,216 @@ public class GameSessionService {
             sideOf(session, username);
             finishGame(session, "DRAW_AGREED", null);
         }
+    }
+
+    // ===================== Đánh với máy =====================
+
+    /**
+     * Tạo ván với máy ({@link #AI_USERNAME}). {@code humanSide} là bên người chơi cầm ('r' hoặc 'b');
+     * nếu máy cầm đỏ thì máy đi nước đầu ngay. Ván dở trước đó của người này với máy bị huỷ.
+     */
+    public GameSession startAiGame(String username, int level, char humanSide) {
+        if (!engineMoveService.isAvailable()) {
+            throw new GameActionException("Máy chưa sẵn sàng: chưa cài engine trên máy chủ");
+        }
+        if (level < EngineMoveService.MIN_LEVEL || level > EngineMoveService.MAX_LEVEL) {
+            throw new GameActionException("Độ khó không hợp lệ");
+        }
+        if (humanSide != XiangqiRules.RED && humanSide != XiangqiRules.BLACK) {
+            throw new GameActionException("Bên cờ không hợp lệ");
+        }
+        Player human = playerService.getPlayerByUsername(username)
+            .orElseThrow(() -> new GameActionException("Không tìm thấy người chơi"));
+        Player ai = playerService.getPlayerByUsername(AI_USERNAME).orElseGet(() -> {
+            Player created = new Player();
+            created.setUsername(AI_USERNAME);
+            return playerService.createPlayer(created);
+        });
+
+        for (GameSession old : sessions.values()) {
+            synchronized (old) {
+                if (old.isAiGame() && !old.isEnded() && username.equals(humanUsername(old))) {
+                    finishGame(old, "ABANDON", old.getAiSide());
+                }
+            }
+        }
+
+        Match match = new Match();
+        match.setId(UUID.randomUUID().toString());
+        match.setPlayer1(humanSide == XiangqiRules.RED ? human : ai);
+        match.setPlayer2(humanSide == XiangqiRules.RED ? ai : human);
+        match.setCreatedAt(new Date());
+        match.setIsAIGame(true);
+        match.setAiLevel(level);
+        match = matchService.createMatch(match);
+
+        Move initialMove = new Move();
+        initialMove.setMatchId(match.getId());
+        initialMove.setTurnNumber(0);
+        initialMove.setBoardState(XiangqiNotation.INITIAL_BOARD);
+        initialMove.setNextTurn("r");
+        moveService.saveMove(initialMove);
+
+        GameSession session = registerNewMatch(match, initialMove);
+        playerMatchService.createPlayerMatch(match.getPlayer1(), match.getPlayer2(), match);
+        playerMatchService.createPlayerMatch(match.getPlayer2(), match.getPlayer1(), match);
+        playerService.updatePlayerStatus(username, PlayerStatus.IN_GAME);
+
+        if (session.getAiSide() == XiangqiRules.RED) {
+            synchronized (session) {
+                scheduleAiMove(session, AI_FIRST_MOVE_DELAY_MS);
+            }
+        }
+        return session;
+    }
+
+    /** Lên lịch máy đi ở luồng riêng; bỏ qua nếu thế cờ đã đổi (đi tiếp, hoàn tác) trong lúc tính. */
+    private void scheduleAiMove(GameSession session, long delayMs) {
+        int version = session.getVersion();
+        aiExecutor.execute(() -> playAiMove(session, version, delayMs));
+    }
+
+    private void playAiMove(GameSession session, int version, long delayMs) {
+        long started = System.currentTimeMillis();
+        String board;
+        char side;
+        int level;
+        List<String> history;
+        synchronized (session) {
+            if (session.isEnded() || session.getVersion() != version || session.getTurn() != session.getAiSide()) {
+                return;
+            }
+            board = session.getBoardState();
+            side = session.getTurn();
+            level = session.getAiLevel();
+            history = new ArrayList<>(session.getMoveHistory());
+        }
+
+        XiangqiRules.Move move;
+        try {
+            move = engineMoveService.chooseMove(XiangqiNotation.INITIAL_FEN, history, board, side, level);
+        } catch (EngineMoveService.EngineBusyException e) {
+            sendError(humanUsername(session), "Máy đang bận, hãy thử lại sau ít giây");
+            return;
+        } catch (RuntimeException e) {
+            log.error("[AI] Không tính được nước đi cho trận {}", session.getMatchId(), e);
+            return;
+        }
+
+        long wait = Math.max(delayMs, AI_MIN_THINK_MS) - (System.currentTimeMillis() - started);
+        if (wait > 0) {
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+
+        synchronized (session) {
+            if (session.isEnded() || session.getVersion() != version) {
+                return;
+            }
+            try {
+                makeMove(session.getMatchId(), AI_USERNAME, move.fromX(), move.fromY(), move.toX(), move.toY());
+            } catch (GameActionException e) {
+                log.error("[AI] Nước của máy bị từ chối ở trận {}: {}", session.getMatchId(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Hoàn tác để lại lượt cho người chơi: bỏ cặp nước (máy + người) gần nhất, hoặc chỉ nước của người
+     * nếu máy chưa kịp đi (đang nghĩ). Chỉ dùng trong ván với máy, tối đa {@link #MAX_UNDOS} lần.
+     */
+    public void undo(String matchId, String username) {
+        GameSession session = getSession(matchId)
+            .orElseThrow(() -> new GameActionException("Không tìm thấy trận đấu"));
+        synchronized (session) {
+            if (!session.isAiGame()) {
+                throw new GameActionException("Chỉ được đi lại khi đánh với máy");
+            }
+            if (!username.equals(humanUsername(session))) {
+                throw new GameActionException("Bạn không thuộc trận đấu này");
+            }
+            if (session.isEnded()) {
+                throw new GameActionException("Trận đấu đã kết thúc");
+            }
+            if (session.getUndosUsed() >= MAX_UNDOS) {
+                throw new GameActionException("Bạn đã hết lượt đi lại");
+            }
+            if (!canUndo(session)) {
+                throw new GameActionException("Chưa có nước nào để đi lại");
+            }
+
+            int plies = session.getTurn() == session.getAiSide() ? 1 : 2;
+            int lastTurnNumber = session.getNextTurnNumber() - 1 - plies;
+            moveService.deleteMovesAfter(matchId, lastTurnNumber);
+            Move restored = moveService.getLatestMove(matchId);
+
+            List<String> history = session.getMoveHistory();
+            history.subList(history.size() - plies, history.size()).clear();
+
+            long now = clock.getAsLong();
+            settleClock(session, now);
+            session.setBoardState(restored.getBoardState());
+            session.setTurn(restored.getNextTurn().charAt(0));
+            session.setNextTurnNumber(restored.getTurnNumber() + 1);
+            session.setCheck(XiangqiRules.isInCheck(restored.getBoardState(), session.getTurn()));
+            session.setLastMoveDescription(restored.getMoveDescription());
+            session.setLastTickAt(now);
+            session.setUndosUsed(session.getUndosUsed() + 1);
+            session.setVersion(session.getVersion() + 1);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("undo", true);
+            payload.put("boardState", session.getBoardState());
+            payload.put("moveDescription", session.getLastMoveDescription());
+            payload.put("nextTurn", String.valueOf(session.getTurn()));
+            payload.put("isCheck", session.isCheck());
+            payload.put("isCheckmate", false);
+            payload.put("redTimeMs", session.getRedTimeMs());
+            payload.put("blackTimeMs", session.getBlackTimeMs());
+            payload.put("undosLeft", MAX_UNDOS - session.getUndosUsed());
+            payload.put("canUndo", canUndo(session));
+            messagingTemplate.convertAndSend("/topic/match." + matchId + ".board", payload);
+        }
+    }
+
+    // Có thể hoàn tác nếu sau khi hoàn tác đến lượt người và thế cờ không lùi quá thế khai cuộc
+    private boolean canUndo(GameSession session) {
+        if (!session.isAiGame() || session.isEnded() || session.getUndosUsed() >= MAX_UNDOS) {
+            return false;
+        }
+        int plies = session.getTurn() == session.getAiSide() ? 1 : 2;
+        int humanFirstPly = session.getAiSide() == XiangqiRules.RED ? 1 : 0;
+        return session.getMoveHistory().size() - plies >= humanFirstPly;
+    }
+
+    private String humanUsername(GameSession session) {
+        return session.getAiSide() == XiangqiRules.RED ? session.getBlackUsername() : session.getRedUsername();
+    }
+
+    // Dựng lại các nước UCI từ mô tả đã lưu ("p 7,2 -> 4,2"), dùng khi nạp lại trận từ DB
+    private List<String> historyOf(String matchId) {
+        List<String> uci = new ArrayList<>();
+        for (Move m : moveService.getMovesByMatchId(matchId)) {
+            if (m.getTurnNumber() == 0 || m.getMoveDescription() == null) {
+                continue;
+            }
+            Matcher matcher = MOVE_DESCRIPTION.matcher(m.getMoveDescription());
+            if (matcher.matches()) {
+                uci.add(XiangqiNotation.toUci(new XiangqiRules.Move(
+                    Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)),
+                    Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)))));
+            }
+        }
+        return uci;
+    }
+
+    @PreDestroy
+    void shutdownAi() {
+        aiExecutor.shutdownNow();
     }
 
     /** Gửi lỗi nước đi riêng cho người chơi. */
@@ -277,7 +537,8 @@ public class GameSessionService {
             boolean redWins = winnerColor == 'r';
             Player winner = redWins ? red : black;
             Player loser = redWins ? black : red;
-            int delta = eloDelta(winner.getElo(), loser.getElo());
+            // Đánh với máy không tính Elo (tránh cày điểm)
+            int delta = session.isAiGame() ? 0 : eloDelta(winner.getElo(), loser.getElo());
             redDelta = redWins ? delta : -delta;
             blackDelta = redWins ? -delta : delta;
             redResult = redWins ? "WIN" : "LOSE";
@@ -429,6 +690,15 @@ public class GameSessionService {
         data.put("redTimeMs", displayedMs(session, 'r', now));
         data.put("blackTimeMs", displayedMs(session, 'b', now));
         data.put("serverTime", now);
+        if (session.isAiGame()) {
+            Map<String, Object> ai = new HashMap<>();
+            ai.put("level", session.getAiLevel());
+            ai.put("levelName", EngineMoveService.levelName(session.getAiLevel()));
+            ai.put("side", String.valueOf(session.getAiSide()));
+            ai.put("undosLeft", MAX_UNDOS - session.getUndosUsed());
+            ai.put("canUndo", canUndo(session));
+            data.put("ai", ai);
+        }
         Map<String, Boolean> disconnected = new HashMap<>();
         disconnected.put("red", session.getRedDisconnectedAt() != null);
         disconnected.put("black", session.getBlackDisconnectedAt() != null);
