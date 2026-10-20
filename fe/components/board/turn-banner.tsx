@@ -5,10 +5,13 @@ export function TurnBanner({
   mine,
   side,
   opponentName,
+  thinkingText,
 }: {
   mine: boolean;
   side: "r" | "b";
   opponentName?: string | null;
+  // Thay cho "{tên} đang suy nghĩ" (ví dụ "Máy đang nghĩ")
+  thinkingText?: string;
 }) {
   return (
     <div
@@ -28,7 +31,7 @@ export function TurnBanner({
           {mine ? "Đến lượt bạn" : "Lượt đối thủ"}
         </p>
         <p className="mt-1.5 truncate text-sm text-muted-foreground">
-          {mine ? "Chọn một quân rồi bấm ô đến" : `${opponentName ?? "Đối thủ"} đang suy nghĩ`}
+          {mine ? "Chọn một quân rồi bấm ô đến" : thinkingText ?? `${opponentName ?? "Đối thủ"} đang suy nghĩ`}
           {!mine && <span className="xq-dots" aria-hidden />}
         </p>
       </div>

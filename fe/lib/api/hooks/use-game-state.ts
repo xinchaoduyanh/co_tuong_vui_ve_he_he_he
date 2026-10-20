@@ -102,6 +102,16 @@ export type GameSnapshot = {
   blackTimeMs: number;
   serverTime: number;
   disconnected: { red: boolean; black: boolean };
+  // Chỉ có trong ván với máy
+  ai?: AiState;
+};
+
+export type AiState = {
+  level: number;
+  levelName: string;
+  side: "r" | "b"; // bên máy cầm
+  undosLeft: number;
+  canUndo: boolean;
 };
 
 export function useGameState() {

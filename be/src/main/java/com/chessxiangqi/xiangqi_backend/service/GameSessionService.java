@@ -257,6 +257,10 @@ public class GameSessionService {
             payload.put("blackCheck", XiangqiRules.isInCheck(next, XiangqiRules.BLACK));
             payload.put("redTimeMs", session.getRedTimeMs());
             payload.put("blackTimeMs", session.getBlackTimeMs());
+            if (session.isAiGame()) {
+                payload.put("undosLeft", MAX_UNDOS - session.getUndosUsed());
+                payload.put("canUndo", canUndo(session));
+            }
             messagingTemplate.convertAndSend("/topic/match." + matchId + ".board", payload);
 
             if (status == XiangqiRules.Status.CHECKMATE || status == XiangqiRules.Status.STALEMATE) {

@@ -11,7 +11,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import Link from "next/link";
-import { parseBoardState, useGameState } from "@/lib/api/hooks/use-game-state";
+import { parseBoardState, useGameState, type AiState } from "@/lib/api/hooks/use-game-state";
 import { useState, useEffect, useRef } from "react";
 import { useWebSocket } from "@/lib/websocket-context";
 import { useParams, useRouter } from "next/navigation";
@@ -89,6 +89,8 @@ export default function GameBoard() {
     return () => clearTimeout(t);
   }, []);
   const fxId = useRef(0);
+  // Ván với máy: độ khó, bên máy cầm, số lần đi lại còn lại (null nếu là ván người-người)
+  const [aiState, setAiState] = useState<AiState | null>(null);
   const params = useParams();
   const svgRef = useRef<SVGSVGElement>(null);
   const router = useRouter();
@@ -169,6 +171,13 @@ export default function GameBoard() {
           setCheckPulse((n) => n + 1);
         }
       }
+      if (data.undo) {
+        setLastMove(null);
+        setBursts([]);
+      }
+      if (data.canUndo !== undefined) {
+        setAiState((prev) => (prev ? { ...prev, canUndo: data.canUndo, undosLeft: data.undosLeft } : prev));
+      }
       prevBoardRef.current = data.boardState;
       setBoardState(data.boardState);
       setTurn(data.nextTurn);
@@ -228,6 +237,7 @@ export default function GameBoard() {
   // Khi có trạng thái mới từ server (mở trang, kết nối lại): đồng bộ bàn cờ, chiếu và đồng hồ
   useEffect(() => {
     if (!snapshot) return;
+    setAiState(snapshot.ai ?? null);
     prevBoardRef.current = snapshot.boardState;
     setBoardState(snapshot.boardState);
     setIsCheck(snapshot.check);
@@ -757,8 +767,17 @@ export default function GameBoard() {
     );
   }
 
-  const redName = player1?.username;
-  const blackName = player2?.username;
+  // Ván với máy: người chơi ảo "da1" hiện là "Máy" kèm tên mức khó
+  const displayName = (name?: string) =>
+    aiState && name === "da1" ? `Máy · ${aiState.levelName}` : name;
+  const redName = displayName(player1?.username);
+  const blackName = displayName(player2?.username);
+  const aiThinking = !!aiState && !gameOver && turn === aiState.side;
+  const handleUndo = () => {
+    if (stompClient && isConnected && matchId) {
+      stompClient.publish({ destination: `/app/match.${matchId}.undo`, body: "" });
+    }
+  };
   const iAmRed = user?.id === player1?.id;
   const iAmBlack = user?.id === player2?.id;
   const actionsDisabled = gameOver || !isConnected || !stompClient;
@@ -793,15 +812,27 @@ export default function GameBoard() {
 
   const actionButtons = (
     <>
-      <Button
-        variant="outline"
-        className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-[#B9863A]/80"
-        onClick={handleDrawRequest}
-        disabled={actionsDisabled}
-      >
-        <Seal char="和" size={24} tilt={-5} />
-        Cầu hòa
-      </Button>
+      {aiState ? (
+        <Button
+          variant="outline"
+          className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-[#B9863A]/80"
+          onClick={handleUndo}
+          disabled={actionsDisabled || !aiState.canUndo}
+        >
+          <Seal char="悔" size={24} tilt={-5} />
+          Đi lại ({aiState.undosLeft})
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-[#B9863A]/80"
+          onClick={handleDrawRequest}
+          disabled={actionsDisabled}
+        >
+          <Seal char="和" size={24} tilt={-5} />
+          Cầu hòa
+        </Button>
+      )}
       <Button
         variant="outline"
         className="panel-lacquer h-12 flex-1 justify-start gap-2.5 border-[#B9863A]/40 hover:border-primary"
@@ -855,6 +886,7 @@ export default function GameBoard() {
                 mine={turn === myColor}
                 side={turn}
                 opponentName={myColor === "r" ? blackName : redName}
+                thinkingText={aiThinking ? "Máy đang nghĩ" : undefined}
               />
             </div>
           )}
