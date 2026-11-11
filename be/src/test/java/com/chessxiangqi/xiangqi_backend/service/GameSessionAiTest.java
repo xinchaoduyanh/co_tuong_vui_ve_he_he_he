@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -192,6 +193,62 @@ class GameSessionAiTest {
         awaitTurn(s, 'r');
         GameActionException e = assertThrows(GameActionException.class, () -> service.undo(s.getMatchId(), "p1"));
         assertEquals("Bạn đã hết lượt đi lại", e.getMessage());
+    }
+
+    @Test
+    void busyEngineIsRetried() throws Exception {
+        ReflectionTestUtils.setField(service, "aiRetryDelayMs", 10L);
+        GameSession s = startRedHuman();
+        when(engine.chooseMove(anyString(), anyList(), anyString(), anyChar(), anyInt()))
+            .thenThrow(new EngineMoveService.EngineBusyException())
+            .thenReturn(new XiangqiRules.Move(0, 6, 0, 5));
+
+        service.makeMove(s.getMatchId(), "p1", 0, 3, 0, 4);
+        awaitTurn(s, 'r');
+
+        assertEquals(List.of("a3a4", "a6a5"), s.getMoveHistory());
+        verify(engine, times(2)).chooseMove(anyString(), anyList(), anyString(), anyChar(), anyInt());
+    }
+
+    @Test
+    void brokenEngineFallsBackToALegalMoveInsteadOfStalling() throws Exception {
+        ReflectionTestUtils.setField(service, "aiRetryDelayMs", 10L);
+        GameSession s = startRedHuman();
+        when(engine.chooseMove(anyString(), anyList(), anyString(), anyChar(), anyInt()))
+            .thenThrow(new IllegalStateException("engine chết"));
+
+        service.makeMove(s.getMatchId(), "p1", 0, 3, 0, 4);
+        awaitTurn(s, 'r');
+
+        assertEquals(2, s.getMoveHistory().size());
+        assertFalse(s.isEnded());
+    }
+
+    @Test
+    void sessionReloadedOnAiTurnLetsTheAiMove() throws Exception {
+        String board = XiangqiRules.apply(XiangqiNotation.INITIAL_BOARD, new XiangqiRules.Move(0, 3, 0, 4));
+        Match m = new Match();
+        m.setId("reloaded");
+        m.setPlayer1(human);
+        m.setPlayer2(ai);
+        m.setAiLevel(2);
+        Move latest = new Move();
+        latest.setMatchId("reloaded");
+        latest.setTurnNumber(1);
+        latest.setBoardState(board);
+        latest.setNextTurn("b");
+        latest.setMoveDescription("r 0,3 -> 0,4");
+        MatchService matchService = (MatchService) ReflectionTestUtils.getField(service, "matchService");
+        when(matchService.getMatchById("reloaded")).thenReturn(Optional.of(m));
+        when(moveService.getLatestMove("reloaded")).thenReturn(latest);
+        when(moveService.getMovesByMatchId("reloaded")).thenReturn(List.of(latest));
+        aiWillReply(0, 6, 0, 5);
+
+        GameSession s = service.getSession("reloaded").orElseThrow();
+        awaitTurn(s, 'r');
+
+        verify(engine).chooseMove(eq(XiangqiNotation.INITIAL_FEN), eq(List.of("a3a4")), eq(board), eq('b'), eq(2));
+        assertEquals(List.of("a3a4", "a6a5"), s.getMoveHistory());
     }
 
     @Test

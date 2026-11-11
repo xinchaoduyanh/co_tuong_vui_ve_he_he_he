@@ -60,6 +60,12 @@ public class GameSessionService {
     /** Máy cầm quân đỏ đi trước: chờ client kịp vào phòng và đăng ký nhận nước đi. */
     private static final long AI_FIRST_MOVE_DELAY_MS = 1500;
 
+    /** Engine bận/lỗi thì thử lại chừng này lần, sau đó máy đi tạm một nước hợp lệ để ván không bị đứng. */
+    private static final int AI_MAX_RETRIES = 3;
+
+    // Chờ giữa hai lần thử lại; test có thể giảm xuống
+    private long aiRetryDelayMs = 2000;
+
     private static final Pattern MOVE_DESCRIPTION = Pattern.compile("^\\w (\\d),(\\d) -> (\\d),(\\d)$");
 
     /** Mất kết nối quá 60 giây thì bị xử thua (ABANDON). */
@@ -143,7 +149,15 @@ public class GameSessionService {
         } catch (RuntimeException e) {
             return Optional.empty();
         }
-        sessions.putIfAbsent(match.getId(), buildSession(match, latest));
+        GameSession built = buildSession(match, latest);
+        if (sessions.putIfAbsent(match.getId(), built) == null) {
+            // Nạp lại sau khi server khởi động lại đúng lúc đến lượt máy: lên lịch cho máy đi tiếp
+            synchronized (built) {
+                if (built.isAiGame() && !built.isEnded() && built.getTurn() == built.getAiSide()) {
+                    scheduleAiMove(built, AI_FIRST_MOVE_DELAY_MS);
+                }
+            }
+        }
         return Optional.of(sessions.get(match.getId()));
     }
 
@@ -362,10 +376,38 @@ public class GameSessionService {
     /** Lên lịch máy đi ở luồng riêng; bỏ qua nếu thế cờ đã đổi (đi tiếp, hoàn tác) trong lúc tính. */
     private void scheduleAiMove(GameSession session, long delayMs) {
         int version = session.getVersion();
-        aiExecutor.execute(() -> playAiMove(session, version, delayMs));
+        aiExecutor.execute(() -> playAiMove(session, version, delayMs, 0));
     }
 
-    private void playAiMove(GameSession session, int version, long delayMs) {
+    /**
+     * Engine bận hoặc lỗi: chờ rồi thử lại (cùng {@code version}, nên thế cờ đổi thì lần thử bị bỏ qua).
+     * Hết số lần thử thì đi tạm một nước hợp lệ ngẫu nhiên, để người chơi không phải chờ đồng hồ máy hết giờ.
+     */
+    private void retryAiMove(GameSession session, int version, int attempt, String board, char side) {
+        if (attempt < AI_MAX_RETRIES) {
+            if (attempt == 0) {
+                sendError(humanUsername(session), "Máy đang bận, đang thử lại...");
+            }
+            try {
+                Thread.sleep(aiRetryDelayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            aiExecutor.execute(() -> playAiMove(session, version, 0, attempt + 1));
+            return;
+        }
+        List<XiangqiRules.Move> legal = XiangqiRules.legalMoves(board, side);
+        if (legal.isEmpty()) {
+            return;
+        }
+        log.warn("[AI] Engine không trả lời sau {} lần thử ở trận {}: đi nước ngẫu nhiên", attempt + 1, session.getMatchId());
+        sendError(humanUsername(session), "Máy gặp sự cố, tạm đi một nước ngẫu nhiên");
+        XiangqiRules.Move move = legal.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(legal.size()));
+        applyAiMove(session, version, move);
+    }
+
+    private void playAiMove(GameSession session, int version, long delayMs, int attempt) {
         long started = System.currentTimeMillis();
         String board;
         char side;
@@ -385,10 +427,12 @@ public class GameSessionService {
         try {
             move = engineMoveService.chooseMove(XiangqiNotation.INITIAL_FEN, history, board, side, level);
         } catch (EngineMoveService.EngineBusyException e) {
-            sendError(humanUsername(session), "Máy đang bận, hãy thử lại sau ít giây");
+            log.warn("[AI] Engine bận ở trận {} (lần {})", session.getMatchId(), attempt + 1);
+            retryAiMove(session, version, attempt, board, side);
             return;
         } catch (RuntimeException e) {
-            log.error("[AI] Không tính được nước đi cho trận {}", session.getMatchId(), e);
+            log.error("[AI] Không tính được nước đi cho trận {} (lần {})", session.getMatchId(), attempt + 1, e);
+            retryAiMove(session, version, attempt, board, side);
             return;
         }
 
@@ -401,7 +445,10 @@ public class GameSessionService {
                 return;
             }
         }
+        applyAiMove(session, version, move);
+    }
 
+    private void applyAiMove(GameSession session, int version, XiangqiRules.Move move) {
         synchronized (session) {
             if (session.isEnded() || session.getVersion() != version) {
                 return;
